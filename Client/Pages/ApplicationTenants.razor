@@ -1,0 +1,175 @@
+@page "/application-tenants"
+@attribute [Authorize]
+@using SmartNest.Client.Services
+@inject Microsoft.Extensions.Localization.IStringLocalizer<ApplicationTenants> L
+@inject NavigationManager NavigationManager
+@inject DialogService DialogService
+@inject TenantService TenantService
+@inject NotificationService NotificationService
+@inject SecurityService Security
+
+<PageTitle>Application Tenants</PageTitle>
+<RadzenStack>
+    <RadzenRow AlignItems="AlignItems.Center">
+        <RadzenColumn Size="12" SizeMD="6">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenButton Icon="arrow_back" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/profile"))" Variant="Variant.Flat" />
+                <RadzenText Text="Tenants" TextStyle="TextStyle.H3" TagName="TagName.H1" style="margin: 0" />
+            </RadzenStack>
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeMD="6">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.End" Gap="0.5rem">
+                <RadzenButton Icon="add_circle_outline" Text="Add" Click="@AddClick" Variant="Variant.Flat" />
+            </RadzenStack>
+        </RadzenColumn>
+    </RadzenRow>
+    <RadzenRow>
+        <RadzenColumn SizeMD="12">
+            <RadzenAlert Size="AlertSize.Large" Shade="Shade.Light" AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Title="Cannot delete tenant" Visible="@errorVisible">@error</RadzenAlert>
+            <RadzenDataGrid @ref="grid0" AllowFiltering="true" AllowPaging="true" ShowPagingSummary="true" 
+                PageSizeOptions=@(new int[]{5, 10, 20, 30}) AllowSorting="true" Data="@tenants" 
+                TItem="TenantDto" RowSelect="@RowSelect" RowRender="@RowRender" IsLoading="@isLoading">
+                <Columns>
+                    <RadzenDataGridColumn TItem="TenantDto" Property="Name" Title="Name" />
+                    <RadzenDataGridColumn TItem="TenantDto" Property="Hosts" Title="Hosts" />
+                    <RadzenDataGridColumn TItem="TenantDto" Filterable="false" Sortable="false" Width="60px">
+                        <Template Context="tenant">
+                            <RadzenButton Disabled="@(tenant.Id == Security.Tenant?.Id)" 
+                                Icon="account_balance_wallet" 
+                                Click="@((args) => SetDefaultTenant(args, tenant))" 
+                                title="Switch application to this tenant" 
+                                Size="ButtonSize.Small"
+                                Variant="Variant.Flat"
+                                @onclick:stopPropagation="true">
+                            </RadzenButton>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TenantDto" Filterable="false" Sortable="false" TextAlign="TextAlign.Center" Width="70px">
+                        <Template Context="tenant">
+                            <RadzenButton ButtonStyle="ButtonStyle.Danger" Icon="close" Size="ButtonSize.Small"
+                                Variant="Variant.Flat" Shade="Shade.Lighter" Click="@(() => DeleteClick(tenant))" @onclick:stopPropagation="true" />
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </RadzenColumn>
+    </RadzenRow>
+</RadzenStack>
+
+@code {
+    protected List<TenantDto> tenants = new();
+    protected RadzenDataGrid<TenantDto> grid0 = null!;
+    protected bool errorVisible;
+    protected string? error;
+    protected bool isLoading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    protected async Task Load()
+    {
+        try
+        {
+            isLoading = true;
+            tenants = await TenantService.GetTenantsAsync();
+        }
+        catch (Exception ex)
+        {
+            errorVisible = true;
+            error = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    protected async Task AddClick()
+    {
+        var result = await DialogService.OpenAsync<AddApplicationTenant>("Add Tenant", null, new DialogOptions { Width = "700px" });
+        if (result == true)
+        {
+            await Load();
+            await grid0.Reload();
+        }
+    }
+
+    protected async Task RowSelect(TenantDto tenant)
+    {
+        var result = await DialogService.OpenAsync<EditApplicationTenant>("Edit Tenant", 
+            new Dictionary<string, object> { { "Id", tenant.Id } }, 
+            new DialogOptions { Width = "700px" });
+        
+        if (result == true)
+        {
+            await Load();
+            await grid0.Reload();
+        }
+    }
+
+    protected async Task DeleteClick(TenantDto tenant)
+    {
+        try
+        {
+            if (await DialogService.Confirm("Are you sure you want to delete this tenant?") == true)
+            {
+                var response = await TenantService.DeleteTenantAsync(tenant.Id);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    NotificationService.Notify(new NotificationMessage 
+                    { 
+                        Severity = NotificationSeverity.Success, 
+                        Summary = "Success", 
+                        Detail = "Tenant deleted successfully", 
+                        Duration = 4000 
+                    });
+                    
+                    await Load();
+                    await grid0.Reload();
+                }
+                else
+                {
+                    errorVisible = true;
+                    error = "Failed to delete tenant";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            errorVisible = true;
+            error = ex.Message;
+        }
+    }
+
+    protected async Task SetDefaultTenant(MouseEventArgs args, TenantDto tenant)
+    {
+        try
+        {
+            // Implémentez la logique de changement de tenant par défaut ici
+            // Cela dépend de votre implémentation de SecurityService
+            NotificationService.Notify(new NotificationMessage 
+            { 
+                Severity = NotificationSeverity.Info, 
+                Summary = "Tenant Switch", 
+                Detail = $"Switching to tenant: {tenant.Name}", 
+                Duration = 4000 
+            });
+            
+            // Exemple: await Security.SetDefaultTenantAsync(tenant.Id);
+            // Puis recharger la page ou mettre à jour l'état
+        }
+        catch (Exception ex)
+        {
+            errorVisible = true;
+            error = ex.Message;
+        }
+    }
+
+    protected void RowRender(RowRenderEventArgs<TenantDto> args)
+    {
+        args.Attributes.Add("style", $"font-weight: {(args.Data.Id == Security.Tenant?.Id ? "bold" : "normal")};");
+    }
+}

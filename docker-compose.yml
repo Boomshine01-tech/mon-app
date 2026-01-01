@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:18
+    container_name: smartnest-postgres
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: awaawa1970
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgreSQL/data
+    networks:
+      - smartnest-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Application SmartNest
+  app:
+    build: .
+    container_name: smartnest-app
+    ports:
+      - "8080:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Docker
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=postgres;Username=postgres;Password=awaawa1970
+      # Ajoutez vos autres variables ici
+      # - MQTT__BrokerAddress=votre_broker
+      # - MQTT__Port=1883
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - smartnest-network
+    restart: on-failure
+
+volumes:
+  postgres_data:
+
+networks:
+  smartnest-network:
+    driver: bridge

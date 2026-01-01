@@ -1,0 +1,1135 @@
+@page "/video-stream"
+@attribute [Authorize]
+@inject IJSRuntime JS
+@using SmartNest.Client.Services
+@inject IVideoStreamService VideoStreamService
+@inject IYoloDataService YoloDataService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NotificationService NotificationService
+@inject ILogger<VideoStream> Logger
+@implements IAsyncDisposable
+
+<PageTitle>Surveillance Vidéo - SmartNest</PageTitle>
+
+<RadzenStack Gap="20px">
+    <!-- En-tête -->
+    <RadzenCard>
+        <div class="row align-items-center">
+            <div class="col">
+                <RadzenText Style="font-size: 24px; font-weight: bold;">📹 Surveillance Vidéo Live</RadzenText>
+                <RadzenText Style="color: #666;">Stream en temps réel avec analyse YOLO</RadzenText>
+            </div>
+            <div class="col-auto">
+                <RadzenStack Orientation="Orientation.Horizontal" Gap="10px">
+                    <RadzenButton Click="ToggleStream" 
+                                Icon="@(isStreaming ? "stop" : "play_arrow")" 
+                                ButtonStyle="@(isStreaming ? ButtonStyle.Danger : ButtonStyle.Success)"
+                                Text="@(isStreaming ? "Arrêter" : "Démarrer")"
+                                Disabled="@loading" />
+                    
+                    @if (isStreaming)
+                    {
+                        <RadzenButton Click="AnalyzeCurrentFrame" 
+                                    Icon="camera" 
+                                    ButtonStyle="ButtonStyle.Info"
+                                    Text="Analyser YOLO"
+                                    Disabled="@(analyzing || loading)" />
+                    }
+                </RadzenStack>
+            </div>
+        </div>
+    </RadzenCard>
+
+    <!-- Détections YOLO -->
+    @if (latestDetections.Any())
+    {
+        <RadzenCard>
+            <RadzenText Style="font-weight: bold; margin-bottom: 10px;">
+                🐣 Détections en temps réel: @latestDetections.Count poussins
+            </RadzenText>
+            <div class="detections-badges">
+                @foreach (var detection in latestDetections)
+                {
+                    <RadzenBadge Text="@($"{detection.Id} - {detection.Confidence:P0}")" 
+                               BadgeStyle="@GetHealthBadge(detection.HealthStatus)" />
+                }
+            </div>
+        </RadzenCard>
+    }
+
+    <!-- Onglets -->
+    <RadzenCard>
+        <RadzenTabs Change="OnTabChange">
+            <Tabs>
+                <!-- Vue Live -->
+                <RadzenTabsItem Text="📹 Vue Live">
+                    <div class="video-container">
+                        @if (isStreaming)
+                        {
+                            <div class="video-wrapper">
+                                <img src="@currentFrame" class="video-frame" alt="Stream" />
+                                <div class="video-stats">
+                                    <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="@($"FPS: {currentFPS}")" />
+                                    <RadzenBadge BadgeStyle="BadgeStyle.Primary" Text="@($"Frames: {frameCount}")" />
+                                    @if (autoAnalyzeYolo)
+                                    {
+                                        <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="🔍 Auto YOLO" />
+                                    }
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="video-placeholder">
+                                <RadzenIcon Icon="videocam" Style="font-size: 64px; color: #ccc;" />
+                                <RadzenText Style="color: #666; margin-top: 15px; font-size: 18px;">
+                                    Streaming vidéo arrêté
+                                </RadzenText>
+                                <RadzenText Style="color: #999; margin-top: 10px;">
+                                    Cliquez sur "Démarrer" pour activer la caméra
+                                </RadzenText>
+                            </div>
+                        }
+                    </div>
+                </RadzenTabsItem>
+
+                <!-- Historique -->
+                <RadzenTabsItem Text="📚 Historique">
+                    <div class="history-container">
+                        <div class="history-controls">
+                            <RadzenButton Click="LoadHistory" 
+                                        Icon="refresh" 
+                                        Text="Actualiser" 
+                                        ButtonStyle="ButtonStyle.Secondary" 
+                                        Disabled="@loadingHistory" />
+                            
+                            <RadzenButton Click="AnalyzeHistoricalFrames" 
+                                        Icon="camera" 
+                                        Text="Analyser avec YOLO" 
+                                        ButtonStyle="ButtonStyle.Success" 
+                                        Disabled="@(loadingHistory || !historicalFrames.Any() || analyzing)" />
+
+                            <RadzenDropDown @bind-Value="historyPeriod" 
+                                          Data="@historyPeriods" 
+                                          TextProperty="Label" 
+                                          ValueProperty="Value"
+                                          Change="OnHistoryPeriodChange"
+                                          Style="width: 200px;" />
+                        </div>
+                        
+                        @if (loadingHistory)
+                        {
+                            <div class="loading-container">
+                                <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" Style="width: 100%;" />
+                                <RadzenText Style="margin-top: 10px; text-align: center;">
+                                    Chargement des images...
+                                </RadzenText>
+                            </div>
+                        }
+                        else if (historicalFrames.Any())
+                        {
+                            <div class="history-stats">
+                                <RadzenBadge BadgeStyle="BadgeStyle.Info" 
+                                           Text="@($"{historicalFrames.Count} images trouvées")" />
+                                <RadzenBadge BadgeStyle="BadgeStyle.Secondary" 
+                                           Text="@($"Taille totale: {(historicalFrames.Sum(f => f.Size) / 1024.0 / 1024.0):F2} MB")" />
+                            </div>
+                            
+                            <div class="history-grid">
+                                @foreach (var frame in historicalFrames)
+                                {
+                                    <div class="history-card" @onclick="() => ShowFrameDetails(frame)">
+                                        <img src="data:image/jpeg;base64,@frame.FrameData" 
+                                             alt="Frame" 
+                                             class="history-thumbnail" />
+                                        <div class="history-info">
+                                            <RadzenText Size="TextSize.Small" Style="font-weight: bold;">
+                                                @frame.Timestamp.ToString("HH:mm:ss")
+                                            </RadzenText>
+                                            <RadzenText Size="TextSize.ExtraSmall" Style="color: #666;">
+                                                @((frame.Size / 1024.0).ToString("F1")) KB
+                                            </RadzenText>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="empty-state">
+                                <RadzenIcon Icon="image" Style="font-size: 64px; color: #ccc;" />
+                                <RadzenText Style="color: #666; margin-top: 15px; font-size: 18px;">
+                                    Aucune image disponible
+                                </RadzenText>
+                                <RadzenText Style="color: #999; margin-top: 10px;">
+                                    Démarrez le streaming pour capturer des images
+                                </RadzenText>
+                            </div>
+                        }
+                    </div>
+                </RadzenTabsItem>
+
+                <!-- Paramètres -->
+                <RadzenTabsItem Text="⚙️ Paramètres">
+                    <div class="settings-container">
+                        <RadzenStack Gap="20px">
+                            
+                            <!-- Analyse YOLO -->
+                            <RadzenFieldset Legend="🔍 Analyse YOLO">
+                                <RadzenStack Gap="10px">
+                                    <div class="setting-item">
+                                        <RadzenCheckBox @bind-Value="autoAnalyzeYolo" Name="autoYolo" />
+                                        <RadzenLabel Text="Analyse automatique (toutes les 30 secondes)" Component="autoYolo" />
+                                    </div>
+                                    
+                                    <div class="setting-item">
+                                        <RadzenCheckBox @bind-Value="showDetectionOverlay" Name="overlay" />
+                                        <RadzenLabel Text="Afficher les détections sur la vidéo" Component="overlay" />
+                                    </div>
+
+                                    <RadzenText Size="TextSize.Small" Style="color: #666;">
+                                        L'analyse YOLO détecte automatiquement les poussins dans le flux vidéo
+                                    </RadzenText>
+                                </RadzenStack>
+                            </RadzenFieldset>
+
+                            <!-- Qualité Vidéo -->
+                            <RadzenFieldset Legend="🎥 Qualité Vidéo">
+                                <RadzenRadioButtonList @bind-Value="selectedQuality"
+                                                      Data="@qualityOptions" 
+                                                      TextProperty="Label" 
+                                                      ValueProperty="Value" />
+                                <RadzenText Size="TextSize.Small" Style="color: #666; margin-top: 10px;">
+                                    Une qualité plus élevée améliore la précision YOLO mais consomme plus de bande passante
+                                </RadzenText>
+                            </RadzenFieldset>
+
+                            <!-- Performances -->
+                            <RadzenFieldset Legend="⚡ Performances">
+                                <RadzenStack Gap="15px">
+                                    <div>
+                                        <RadzenText Style="margin-bottom: 5px;">
+                                            FPS (Images par seconde): <strong>@targetFPS</strong>
+                                        </RadzenText>
+                                        <RadzenSlider @bind-Value="targetFPS" 
+                                                    Min="1" 
+                                                    Max="30" 
+                                                    Step="1"
+                                                    Style="width: 100%;" />
+                                        <RadzenText Size="TextSize.Small" Style="color: #666;">
+                                            Recommandé: 10 FPS pour un bon équilibre
+                                        </RadzenText>
+                                    </div>
+
+                                    <div>
+                                        <RadzenText Style="margin-bottom: 5px;">
+                                            Compression JPEG: <strong>@((int)(compressionQuality * 100))%</strong>
+                                        </RadzenText>
+                                        <RadzenSlider @bind-Value="CompressionQualityDecimal"
+                                                    Min="0.3m"
+                                                    Max="1.0m"
+                                                    Step="0.1m"
+                                                    Style="width: 100%;" />
+
+                                        <RadzenText Size="TextSize.Small" Style="color: #666;">
+                                            Une compression plus faible réduit la taille des images
+                                        </RadzenText>
+                                    </div>
+                                </RadzenStack>
+                            </RadzenFieldset>
+
+                            <!-- Stockage -->
+                            <RadzenFieldset Legend="💾 Stockage">
+                                <RadzenStack Gap="10px">
+                                    <RadzenText>
+                                        Images actuellement stockées: <strong>@historicalFrames.Count</strong>
+                                    </RadzenText>
+                                    <RadzenText>
+                                        Espace utilisé: <strong>@((historicalFrames.Sum(f => f.Size) / 1024.0 / 1024.0).ToString("F2")) MB</strong>
+                                    </RadzenText>
+                                    
+                                    <RadzenButton Click="DeleteOldFrames" 
+                                                Icon="delete" 
+                                                Text="Supprimer les images anciennes (>24h)" 
+                                                ButtonStyle="ButtonStyle.Danger"
+                                                Style="margin-top: 10px;" />
+                                </RadzenStack>
+                            </RadzenFieldset>
+
+                            <!-- Bouton Sauvegarder -->
+                            <RadzenButton Click="SaveSettings" 
+                                        Icon="save" 
+                                        Text="Sauvegarder les paramètres" 
+                                        ButtonStyle="ButtonStyle.Primary"
+                                        Size="ButtonSize.Large"
+                                        Style="width: 100%;" />
+                        </RadzenStack>
+                    </div>
+                </RadzenTabsItem>
+            </Tabs>
+        </RadzenTabs>
+    </RadzenCard>
+</RadzenStack>
+
+<!-- Modal Détails de Frame -->
+@if (showFrameModal && selectedFrame != null)
+{
+    <RadzenDialog @bind-Visible="showFrameModal" Style="width: 90vw; max-width: 1200px;">
+        
+            <RadzenStack Gap="15px">
+                <div class="modal-header-custom">
+                    <RadzenText Style="font-size: 20px; font-weight: bold;">
+                        📸 Image capturée
+                    </RadzenText>
+                    <RadzenBadge BadgeStyle="BadgeStyle.Info" 
+                               Text="@selectedFrame.Timestamp.ToString("dd/MM/yyyy HH:mm:ss")" />
+                </div>
+                
+                <div class="frame-modal-content">
+                    <div class="frame-modal-image-container">
+                        <img src="data:image/jpeg;base64,@selectedFrame.FrameData" 
+                             alt="Frame détaillé" 
+                             class="frame-modal-image" />
+                    </div>
+                    
+                    <div class="frame-modal-info">
+                        <RadzenFieldset Legend="Informations">
+                            <RadzenStack Gap="10px">
+                                <div class="info-row">
+                                    <strong>ID:</strong>
+                                    <span>@selectedFrame.Id</span>
+                                </div>
+                                <div class="info-row">
+                                    <strong>Date:</strong>
+                                    <span>@selectedFrame.Timestamp.ToString("dd/MM/yyyy HH:mm:ss")</span>
+                                </div>
+                                <div class="info-row">
+                                    <strong>Qualité:</strong>
+                                    <span>@selectedFrame.Quality</span>
+                                </div>
+                                <div class="info-row">
+                                    <strong>Taille:</strong>
+                                    <span>@((selectedFrame.Size / 1024.0).ToString("F2")) KB</span>
+                                </div>
+                            </RadzenStack>
+                        </RadzenFieldset>
+
+                        <RadzenButton Click="AnalyzeSelectedFrame" 
+                                    Icon="camera" 
+                                    Text="Analyser avec YOLO" 
+                                    ButtonStyle="ButtonStyle.Success"
+                                    Style="width: 100%; margin-top: 15px;"
+                                    Disabled="@analyzing" />
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <RadzenButton Click="() => showFrameModal = false" 
+                                Text="Fermer" 
+                                ButtonStyle="ButtonStyle.Secondary" />
+                    <RadzenButton Click="DeleteSelectedFrame" 
+                                Icon="delete"
+                                Text="Supprimer" 
+                                ButtonStyle="ButtonStyle.Danger" />
+                </div>
+            </RadzenStack>
+    </RadzenDialog>
+}
+
+<style>
+    .video-container {
+        position: relative;
+        min-height: 500px;
+        background: #000;
+        border-radius: 12px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .video-frame {
+        width: 100%;
+        max-height: 70vh;
+        object-fit: contain;
+    }
+
+    .video-stats {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .video-placeholder, .empty-state {
+        text-align: center;
+        padding: 80px 20px;
+        color: #666;
+    }
+
+    .detections-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .history-controls {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .history-stats {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+
+    .history-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 15px;
+    }
+
+    .history-card {
+        border: 2px solid #e0e0e0;
+        border-radius: 12px;
+        overflow: hidden;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .history-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+        border-color: #3498db;
+    }
+
+    .history-thumbnail {
+        width: 100%;
+        height: 140px;
+        object-fit: cover;
+    }
+
+    .history-info {
+        padding: 10px;
+        background: #f8f9fa;
+        text-align: center;
+    }
+
+    .settings-container {
+        padding: 20px;
+        max-width: 800px;
+        margin: 0 auto;
+    }
+
+    .setting-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .frame-modal-content {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 20px;
+    }
+
+    .frame-modal-image-container {
+        background: #000;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .frame-modal-image {
+        max-width: 100%;
+        max-height: 60vh;
+        object-fit: contain;
+    }
+
+    .frame-modal-info {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .modal-header-custom {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .info-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 5px 0;
+        border-bottom: 1px solid #eee;
+    }
+
+    .modal-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+    }
+
+    .loading-container {
+        padding: 40px;
+        text-align: center;
+    }
+
+    
+</style>
+
+@code {
+    // États
+    private bool isStreaming, analyzing, loadingHistory, loading, autoAnalyzeYolo, showDetectionOverlay = true;
+    private bool showFrameModal;
+    
+    // Données vidéo
+    private string currentFrame = "", selectedQuality = "medium", _userId = "123", historyPeriod = "1h";
+    private int currentFPS, frameCount, targetFPS = 10, framesInSecond;
+    private double compressionQuality = 0.7;
+    private decimal CompressionQualityDecimal
+    {
+        get => (decimal)compressionQuality;
+        set => compressionQuality = (double)value;
+    }
+    
+    // Collections
+    private List<SavedFrameInfo> historicalFrames = new();
+    private List<ChickDetection> latestDetections = new();
+    private SavedFrameInfo? selectedFrame;
+    
+    // Timers
+    private System.Timers.Timer? fpsTimer, yoloTimer;
+
+    // JS DotNet reference (kept to dispose)
+    private DotNetObjectReference<object>? dotNetRef;
+
+    // Options
+    private List<QualityOption> qualityOptions = new()
+    {
+        new() { Value = "low", Label = "🔻 Basse (320x240)" },
+        new() { Value = "medium", Label = "▶️ Moyenne (640x480)" },
+        new() { Value = "high", Label = "🔺 Haute (1280x720)" }
+    };
+
+    private List<HistoryPeriod> historyPeriods = new()
+    {
+        new() { Value = "10m", Label = "10 dernières minutes" },
+        new() { Value = "1h", Label = "1 heure" },
+        new() { Value = "6h", Label = "6 heures" },
+        new() { Value = "24h", Label = "24 heures" },
+        new() { Value = "7d", Label = "7 jours" }
+    };
+
+    // Ajoutez ces méthodes dans le @code de VideoStream.razor
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        _userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "123";
+
+        // ✅ NOUVEAU: Vérifier si une session est déjà active
+        await CheckExistingSession();
+
+        // Timer FPS
+        fpsTimer = new System.Timers.Timer(1000);
+        fpsTimer.Elapsed += (s, e) => 
+        {
+            currentFPS = framesInSecond;
+            framesInSecond = 0;
+            InvokeAsync(StateHasChanged);
+        };
+        fpsTimer.Start();
+
+        // Timer YOLO Auto
+        yoloTimer = new System.Timers.Timer(30000);
+        yoloTimer.Elapsed += async (s, e) =>
+        {
+            if (autoAnalyzeYolo && isStreaming && !analyzing)
+            {
+                await InvokeAsync(AnalyzeCurrentFrame);
+            }
+        };
+        yoloTimer.Start();
+    }
+
+    // ✅ NOUVEAU: Vérifier l'existence d'une session active
+    private async Task CheckExistingSession()
+    {
+        try
+        {
+            var response = await VideoStreamService.GetSessionStatus(_userId);
+        
+            if (response != null && response.IsActive)
+            {
+                isStreaming = true;
+                selectedQuality = response.Quality ?? "medium";
+                targetFPS = response.TargetFPS;
+            
+                // Redémarrer la capture côté client
+                await StartStream();
+            
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Info,
+                    Summary = "✅ Session active restaurée",
+                    Detail = "Le streaming continue depuis votre dernière visite"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Could not restore session: {ex.Message}");
+        }
+    }
+
+    private async Task StartStream()
+    {
+        try
+        {
+            loading = true;
+
+            // ✅ NOUVEAU: Démarrer une session côté serveur
+            var sessionStarted = await VideoStreamService.StartStreamSession(new StartStreamRequest
+            {
+                UserId = _userId,
+                DesiredFPS = targetFPS,
+                Resolution = selectedQuality
+            });
+
+            if (!sessionStarted)
+            {
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "❌ Erreur",
+                    Detail = "Impossible de démarrer la session de streaming"
+                });
+                return;
+            }
+
+            // Dispose previous dotNetRef if any
+            dotNetRef?.Dispose();
+            dotNetRef = DotNetObjectReference.Create<object>(this);
+
+            var success = await JS.InvokeAsync<bool>(
+                "videoCaptureModule.start",
+                dotNetRef,
+                targetFPS,
+                compressionQuality,
+                selectedQuality
+            );
+    
+            if (success)
+            {
+                isStreaming = true;
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "✅ Stream démarré",
+                    Detail = "Le streaming persistera même si vous quittez la page"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "❌ Erreur",
+                Detail = ex.Message
+            });
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task StopStream()
+    {
+        try
+        {
+            // ✅ NOUVEAU: Arrêter la session côté serveur
+            await VideoStreamService.StopStreamSession(_userId);
+
+            await JS.InvokeVoidAsync("videoCaptureModule.stop");
+        }
+        catch
+        {
+            // ignore JS stop errors
+        }
+
+        isStreaming = false;
+        currentFrame = "";
+        latestDetections.Clear();
+
+        dotNetRef?.Dispose();
+        dotNetRef = null;
+
+        NotificationService.Notify(new NotificationMessage
+        {
+            Severity = NotificationSeverity.Info,
+            Summary = "⏹️ Streaming arrêté"
+        });
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await InitializeJavaScript();
+        }
+    }
+
+    private async Task InitializeJavaScript()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval", @"
+                window.videoCaptureModule = {
+                    stream: null,
+                    interval: null,
+                    helper: null,
+                    video: null,
+
+                    start: async function(dotNetRef, fps, quality, resolution) {
+                        console.log('🚀 Starting capture...');
+                        this.helper = dotNetRef;
+                        
+                        try {
+                            const config = {
+                                low: { width: 320, height: 240 },
+                                medium: { width: 640, height: 480 },
+                                high: { width: 1280, height: 720 }
+                            }[resolution] || { width: 640, height: 480 };
+
+                            this.stream = await navigator.mediaDevices.getUserMedia({ 
+                                video: { 
+                                    width: { ideal: config.width },
+                                    height: { ideal: config.height },
+                                    frameRate: { ideal: fps }
+                                } 
+                            });
+                            
+                            console.log('✅ Camera OK');
+
+                            this.video = document.createElement('video');
+                            this.video.srcObject = this.stream;
+                            this.video.playsInline = true;
+                            this.video.muted = true;
+                            
+                            await new Promise((resolve) => {
+                                this.video.onloadedmetadata = () => {
+                                    this.video.play();
+                                    resolve();
+                                };
+                            });
+
+                            const canvas = document.createElement('canvas');
+                            const ctx = canvas.getContext('2d');
+                            canvas.width = config.width;
+                            canvas.height = config.height;
+
+                            this.interval = setInterval(async () => {
+                                if (this.video.readyState === 4) {
+                                    ctx.drawImage(this.video, 0, 0, canvas.width, canvas.height);
+                                    const frameData = canvas.toDataURL('image/jpeg', quality);
+                                    const base64 = frameData.split(',')[1];
+                                    
+                                    try {
+                                        await this.helper.invokeMethodAsync('ReceiveVideoFrame', base64);
+                                    } catch (e) {
+                                        console.error('Frame error:', e);
+                                    }
+                                }
+                            }, 1000 / fps);
+
+                            console.log('✅ Capture started');
+                            return true;
+                            
+                        } catch (error) {
+                            console.error('❌ Error:', error);
+                            alert('Erreur caméra: ' + error.message);
+                            return false;
+                        }
+                    },
+
+                    stop: function() {
+                        if (this.interval) clearInterval(this.interval);
+                        if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+                        if (this.video) this.video.srcObject = null;
+                        this.interval = null;
+                        this.stream = null;
+                        this.video = null;
+                        this.helper = null;
+                        console.log('✅ Stopped');
+                    }
+                };
+            ");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ JS init error: {ex.Message}");
+        }
+    }
+
+    private async Task ToggleStream()
+    {
+        if (!isStreaming) await StartStream();
+        else await StopStream();
+    }
+
+
+    [JSInvokable]
+    public async Task ReceiveVideoFrame(string frameData)
+    {
+        currentFrame = $"data:image/jpeg;base64,{frameData}";
+        frameCount++;
+        framesInSecond++;
+        // send to server/process in background - don't await long to keep UI responsive
+        _ = VideoStreamService.ProcessVideoFrame(_userId, frameData);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AnalyzeCurrentFrame()
+    {
+        if (analyzing) return;
+        analyzing = true;
+        
+        try
+        {
+            var result = await VideoStreamService.AnalyzeRecentFrames(_userId, 1);
+            latestDetections = result.Detections;
+            
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Success,
+                Summary = $"🐣 {result.UniqueChicks} poussins détectés"
+            });
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erreur YOLO",
+                Detail = ex.Message
+            });
+        }
+        finally
+        {
+            analyzing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AnalyzeHistoricalFrames()
+    {
+        analyzing = true;
+        try
+        {
+            var result = await VideoStreamService.AnalyzeRecentFrames(_userId, 5);
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Success,
+                Summary = $"✅ {result.UniqueChicks} poussins détectés sur {result.FramesAnalyzed} images"
+            });
+        }
+        finally
+        {
+            analyzing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AnalyzeSelectedFrame()
+    {
+        if (selectedFrame == null) return;
+
+        if (analyzing) return;
+        analyzing = true;
+
+        try
+        {
+            // Fallback: analyze the most recent frame(s) if no dedicated API for a single saved frame exists.
+            // This keeps the UI responsive and uses existing service surface.
+            var result = await VideoStreamService.AnalyzeRecentFrames(_userId, 1);
+            latestDetections = result.Detections;
+
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Success,
+                Summary = $"🔍 Analyse terminée - {result.UniqueChicks} poussins détectés"
+            });
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erreur d'analyse",
+                Detail = ex.Message
+            });
+        }
+        finally
+        {
+            analyzing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadHistory()
+    {
+        loadingHistory = true;
+        try
+        {
+            var (fromDate, toDate) = GetDateRange(historyPeriod);
+            Console.WriteLine($"📊 Loading history from {fromDate} to {toDate}");
+            historicalFrames = await VideoStreamService.GetSavedFrames(_userId, fromDate, toDate);
+            Console.WriteLine($"✅ Loaded {historicalFrames.Count} frames");       
+            if (!historicalFrames.Any())
+            {
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Info,
+                    Summary = "Aucune image trouvée",
+                    Detail = $"Aucune image pour la période: {historyPeriod}"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ Error loading history: {ex.Message}");
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erreur chargement",
+                Detail = ex.Message
+            });
+        }
+
+        finally
+        {
+            loadingHistory = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnHistoryPeriodChange()
+    {
+        await LoadHistory();
+    }
+
+    private (DateTime fromDate, DateTime toDate) GetDateRange(string period)
+    {
+        var toDate = DateTime.Now;
+        var fromDate = period switch
+        {
+            "10m" => toDate.AddMinutes(-10),
+            "1h" => toDate.AddHours(-1),
+            "6h" => toDate.AddHours(-6),
+            "24h" => toDate.AddHours(-24),
+            "7d" => toDate.AddDays(-7),
+            _ => toDate.AddHours(-1)
+        };
+        return (fromDate, toDate);
+    }
+
+    private void ShowFrameDetails(SavedFrameInfo frame)
+    {
+        selectedFrame = frame;
+        showFrameModal = true;
+    }
+
+    private async Task DeleteSelectedFrame()
+    {
+        if (selectedFrame == null) return;
+
+        try
+        {
+            var success = await VideoStreamService.DeleteSavedFrame(selectedFrame.Id, _userId);
+            if (success)
+            {
+                historicalFrames.Remove(selectedFrame);
+                showFrameModal = false;
+                selectedFrame = null;
+                
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "✅ Image supprimée"
+                });
+            }
+            else
+            {
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Warning,
+                    Summary = "Suppression échouée"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erreur suppression",
+                Detail = ex.Message
+            });
+        }
+        finally
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task DeleteOldFrames()
+    {
+        try
+        {
+            var cutoff = DateTime.Now.AddHours(-24);
+            var toDelete = historicalFrames.Where(f => f.Timestamp < cutoff).ToList();
+            int removed = 0;
+
+            foreach (var f in toDelete)
+            {
+                try
+                {
+                    var ok = await VideoStreamService.DeleteSavedFrame(f.Id, _userId);
+                    if (ok)
+                    {
+                        historicalFrames.Remove(f);
+                        removed++;
+                    }
+                }
+                catch
+                {
+                    // ignore individual failures
+                }
+            }
+
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = removed > 0 ? NotificationSeverity.Success : NotificationSeverity.Info,
+                Summary = removed > 0 ? $"✅ {removed} images supprimées (>24h)" : "Aucune image à supprimer"
+            });
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erreur suppression",
+                Detail = ex.Message
+            });
+        }
+        finally
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        try
+        {
+            // Persist settings to localStorage for quick UX (backend save can be added later)
+            await JS.InvokeVoidAsync("localStorage.setItem", "video_autoAnalyzeYolo", autoAnalyzeYolo.ToString());
+            await JS.InvokeVoidAsync("localStorage.setItem", "video_showDetectionOverlay", showDetectionOverlay.ToString());
+            await JS.InvokeVoidAsync("localStorage.setItem", "video_selectedQuality", selectedQuality);
+            await JS.InvokeVoidAsync("localStorage.setItem", "video_targetFPS", targetFPS.ToString());
+            await JS.InvokeVoidAsync("localStorage.setItem", "video_compressionQuality", compressionQuality.ToString("F2"));
+
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Success,
+                Summary = "✅ Paramètres sauvegardés"
+            });
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erreur sauvegarde",
+                Detail = ex.Message
+            });
+        }
+    }
+
+    private async Task OnTabChange(int index)
+    {
+        // Lorsque l'utilisateur affiche l'onglet Historique, on charge les images
+        try
+        {
+   
+           // Ordre des onglets : 0 = Vue Live, 1 = Historique, 2 = Paramètres
+            if (index == 1)
+            {
+                await LoadHistory();
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    private BadgeStyle GetHealthBadge(object? healthStatus)
+    {
+        var s = healthStatus?.ToString()?.ToLowerInvariant() ?? "";
+        return s switch
+        {
+            "healthy" or "ok" or "good" => BadgeStyle.Success,
+            "warning" or "warn" => BadgeStyle.Warning,
+            "critical" or "danger" or "bad" => BadgeStyle.Danger,
+            "info" or "unknown" => BadgeStyle.Info,
+            _ => BadgeStyle.Secondary
+        };
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            // Stop JS capture if running
+            try
+            {
+                await JS.InvokeVoidAsync("videoCaptureModule.stop");
+            }
+            catch
+            {
+                // ignore
+            }
+
+            fpsTimer?.Stop();
+            yoloTimer?.Stop();
+
+            fpsTimer?.Dispose();
+            yoloTimer?.Dispose();
+
+            dotNetRef?.Dispose();
+            dotNetRef = null;
+        }
+        catch
+        {
+            // best-effort cleanup
+        }
+    }
+    public class HistoryPeriod
+    {
+    public string? Value { get; set; }
+    public string? Label { get; set; }
+    }
+}

@@ -1,0 +1,60 @@
+@inject Microsoft.Extensions.Localization.IStringLocalizer<Login> L
+@inject NavigationManager NavigationManager
+@inject NotificationService NotificationService
+@layout LoginLayout
+@page "/login"
+
+<PageTitle>Login</PageTitle>
+<RadzenText Text="Login" TextStyle="Radzen.Blazor.TextStyle.H5" class="mb-4" TagName="Radzen.Blazor.TagName.H2" />
+<RadzenRow>
+    <RadzenColumn SizeMD="12">
+        <RadzenTemplateForm Action="@($"account/login?redirectUrl={redirectUrl}")" Data="@("login")"
+            Method="post">
+            <RadzenAlert Shade="Radzen.Shade.Lighter" Variant="Radzen.Variant.Flat" Size="Radzen.AlertSize.Small" 
+                AlertStyle="Radzen.AlertStyle.Danger" Visible="@errorVisible">@error</RadzenAlert>
+            <RadzenAlert Shade="Radzen.Shade.Lighter" Variant="Radzen.Variant.Flat" Size="Radzen.AlertSize.Small" 
+                AlertStyle="Radzen.AlertStyle.Info" Visible="@infoVisible">@info</RadzenAlert>
+            
+            <RadzenLogin AllowResetPassword="true" 
+                         AllowRegister="true" 
+                         FormFieldVariant="Variant.Flat"
+                         ResetPassword="@(email => OnResetPassword(email))"
+                         Register="@(args => OnRegister())"
+
+            />
+        </RadzenTemplateForm>
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    private string redirectUrl = "/";
+    private bool errorVisible;
+    private string error = string.Empty;
+    private bool infoVisible;
+    private string info = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        // Récupérer les paramètres de l'URL
+        var uri = new Uri(NavigationManager.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        
+        redirectUrl = query["redirectUrl"] ?? "/";
+        error = query["error"] ?? string.Empty;
+        info = query["info"] ?? string.Empty;
+        
+        errorVisible = !string.IsNullOrEmpty(error);
+        infoVisible = !string.IsNullOrEmpty(info);
+    }
+
+    // Les méthodes doivent accepter un paramètre même si on ne l'utilise pas
+    private void OnResetPassword(string email)
+    {
+        NavigationManager.NavigateTo($"/reset-password?email={Uri.EscapeDataString(email)}");
+    }
+
+    private void OnRegister()
+    {
+        NavigationManager.NavigateTo($"/register?redirectUrl={Uri.EscapeDataString(redirectUrl)}");
+    }
+}

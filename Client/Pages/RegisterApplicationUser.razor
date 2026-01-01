@@ -1,0 +1,116 @@
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Identity;
+@using SmartNest.Server.Models;
+@inject Microsoft.Extensions.Localization.IStringLocalizer<RegisterApplicationUser> L
+@inject DialogService DialogService
+@inject UserManager<ApplicationUser> UserManager
+@inject NotificationService NotificationService
+
+<RadzenRow>
+    <RadzenColumn SizeMD="12">
+        <RadzenTemplateForm Data="@user" TItem="SmartNest.Server.Models.ApplicationUser"
+            Visible="@(user != null)" Submit="@FormSubmit">
+            <RadzenAlert Shade="Shade.Lighter" Variant="Variant.Flat" Size="AlertSize.Small" AlertStyle="AlertStyle.Danger" Visible="@errorVisible">@error</RadzenAlert>
+
+            <RadzenStack style="margin-bottom: 1rem;">
+                <RadzenFormField Text="Email" Variant="Variant.Flat">
+                    <ChildContent>
+                        @if(user!=null)
+                        {
+                           <RadzenTextBox style="display: block; width: 100%" @bind-Value="@(user.Email)" Name="UserName" />
+                        }
+                    </ChildContent>
+                    <Helper>
+                        <RadzenRequiredValidator Component="UserName" Text="Email is required" />
+                    </Helper>
+                </RadzenFormField>
+                <RadzenFormField Text="Password" Variant="Variant.Flat">
+                    <ChildContent>
+                        @if(user!=null)
+                        {
+                           <RadzenPassword @bind-Value="@(user.Password)" style="display: block; width: 100%" Name="Password" />
+                        }
+                    </ChildContent>
+                    <Helper>
+                        <RadzenRequiredValidator Component="Password" Text="Password is required" />
+                    </Helper>
+                </RadzenFormField>
+                <RadzenFormField Text="Confirm Password" Variant="Variant.Flat">
+                    <ChildContent>
+                        @if(user!=null)
+                        {
+                           <RadzenPassword style="display: block; width: 100%" @bind-Value="@(user.ConfirmPassword)" Name="ConfirmPassword" />
+                        }
+                    </ChildContent>
+                    <Helper>
+                        <RadzenRequiredValidator Component="ConfirmPassword" Text="ConfirmPassword is required" />
+                        @if(user!=null)
+                        {
+                           <RadzenCompareValidator Component="ConfirmPassword" Text="Passwords must match" Value="@user.Password" />
+                        }
+                    </Helper>
+                </RadzenFormField>
+            </RadzenStack>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.End" Gap="0.5rem">
+                    <RadzenButton ButtonType="ButtonType.Submit" Icon="save" Text="Register" IsBusy="@isBusy" BusyText="Registering ..." Variant="Variant.Flat" />
+                    <RadzenButton ButtonStyle="ButtonStyle.Light" Text="Cancel" Click="@CancelClick" Variant="Variant.Flat" />
+            </RadzenStack>
+        </RadzenTemplateForm>
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    protected SmartNest.Server.Models.ApplicationUser user = new();
+    protected bool errorVisible;
+    protected string? error;
+    protected bool isBusy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = new SmartNest.Server.Models.ApplicationUser();
+    }
+
+    protected async Task FormSubmit()
+    {
+        try
+        {
+            isBusy = true;
+            errorVisible = false;
+            
+            user.UserName = user.Email;
+            var result = await UserManager.CreateAsync(user, user.Password);
+
+            if (result.Succeeded)
+            {
+                NotificationService.Notify(new NotificationMessage 
+                { 
+                    Severity = NotificationSeverity.Success, 
+                    Summary = "Success", 
+                    Detail = "User registered successfully. Please log in.", 
+                    Duration = 4000 
+                });
+                
+                DialogService.Close(true);
+            }
+            else
+            {
+                errorVisible = true;
+                error = string.Join(", ", result.Errors.Select(e => e.Description));
+            }
+        }
+        catch (Exception ex)
+        {
+            errorVisible = true;
+            error = ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    protected void CancelClick()
+    {
+        DialogService.Close(false);
+    }
+}

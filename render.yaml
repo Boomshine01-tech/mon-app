@@ -1,0 +1,32 @@
+services:
+  # API ASP.NET Core
+  - type: web
+    name: blazor-api
+    env: docker
+    repo: https://github.com/Boomshine01-tech/mon-app-blazor
+    branch: main
+    rootDir: Server
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_URLS
+        value: http://+:80
+
+  # Blazor WASM Static Site
+  - type: web
+    name: blazor-app
+    env: static
+    repo: https://github.com/Boomshine01-tech/mon-app-blazor
+    branch: main
+    buildCommand: dotnet publish Client/SmartNest.Client.csproj -c Release -o publish
+    staticPublishPath: publish/wwwroot
+    plan: free
+    region: frankfurt
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

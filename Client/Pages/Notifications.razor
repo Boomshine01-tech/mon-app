@@ -1,0 +1,604 @@
+@page "/notifications"
+@attribute [Authorize]
+@using Radzen
+@using Radzen.Blazor
+@using System.Net.Http.Json
+@using SmartNest.Client.Services
+@using SmartNest.Client.Models
+@using System.Security.Claims
+@inject NavigationManager Navigation
+@inject INotificationUIService NotificationService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NotificationService ToastService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Notifications - SmartNest</PageTitle>
+
+<RadzenStack Gap="1rem" Class="rz-p-4 rz-p-md-6">
+    <!-- En-tête -->
+    <RadzenCard>
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenIcon Icon="notifications" Style="font-size: 2rem; color: var(--rz-primary);" />
+                <RadzenStack Gap="0">
+                    <RadzenText TextStyle="TextStyle.H4" Style="margin: 0;">Notifications</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color);">
+                        Historique des alertes et notifications système
+                    </RadzenText>
+                </RadzenStack>
+            </RadzenStack>
+            
+            <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" Wrap="FlexWrap.Wrap">
+                <RadzenButton Click="NavigateToSettings" 
+                            Text="Paramètres" 
+                            ButtonStyle="ButtonStyle.Secondary"
+                            Icon="settings"
+                            Size="ButtonSize.Medium" />
+                <RadzenButton Click="LoadNotifications" 
+                            Text="Actualiser" 
+                            ButtonStyle="ButtonStyle.Light"
+                            Icon="refresh"
+                            Disabled="@isLoading"
+                            Size="ButtonSize.Medium" />
+                <RadzenButton Click="MarkAllAsRead" 
+                            Text="Tout marquer comme lu" 
+                            ButtonStyle="ButtonStyle.Info"
+                            Icon="done_all"
+                            Disabled="@(isLoading || unreadCount == 0)"
+                            Size="ButtonSize.Medium" />
+            </RadzenStack>
+        </RadzenStack>
+    </RadzenCard>
+
+    @if (isLoading)
+    {
+        <RadzenCard>
+            <RadzenStack AlignItems="AlignItems.Center" Gap="1rem" Style="padding: 3rem;">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Large" />
+                <RadzenText TextStyle="TextStyle.Body1">Chargement des notifications...</RadzenText>
+            </RadzenStack>
+        </RadzenCard>
+    }
+    else
+    {
+        <!-- Cartes statistiques -->
+        <RadzenRow Gap="1rem">
+            <RadzenColumn Size="12" SizeSM="6" SizeMD="3">
+                <RadzenCard Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                    <RadzenStack Gap="0.5rem">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                            <RadzenIcon Icon="notifications" Style="font-size: 1.5rem;" />
+                            <RadzenText TextStyle="TextStyle.Overline">Total</RadzenText>
+                        </RadzenStack>
+                        <RadzenText TextStyle="TextStyle.H3" Style="margin: 0; font-weight: 700;">@notificationList.Count</RadzenText>
+                    </RadzenStack>
+                </RadzenCard>
+            </RadzenColumn>
+            
+            <RadzenColumn Size="12" SizeSM="6" SizeMD="3">
+                <RadzenCard Style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
+                    <RadzenStack Gap="0.5rem">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                            <RadzenIcon Icon="mark_email_unread" Style="font-size: 1.5rem;" />
+                            <RadzenText TextStyle="TextStyle.Overline">Non lues</RadzenText>
+                        </RadzenStack>
+                        <RadzenText TextStyle="TextStyle.H3" Style="margin: 0; font-weight: 700;">@unreadCount</RadzenText>
+                    </RadzenStack>
+                </RadzenCard>
+            </RadzenColumn>
+            
+            <RadzenColumn Size="12" SizeSM="6" SizeMD="3">
+                <RadzenCard Style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white;">
+                    <RadzenStack Gap="0.5rem">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                            <RadzenIcon Icon="warning" Style="font-size: 1.5rem;" />
+                            <RadzenText TextStyle="TextStyle.Overline">Critiques</RadzenText>
+                        </RadzenStack>
+                        <RadzenText TextStyle="TextStyle.H3" Style="margin: 0; font-weight: 700;">@criticalCount</RadzenText>
+                    </RadzenStack>
+                </RadzenCard>
+            </RadzenColumn>
+            
+            <RadzenColumn Size="12" SizeSM="6" SizeMD="3">
+                <RadzenCard Style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); color: #333;">
+                    <RadzenStack Gap="0.5rem">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                            <RadzenIcon Icon="today" Style="font-size: 1.5rem;" />
+                            <RadzenText TextStyle="TextStyle.Overline">Aujourd'hui</RadzenText>
+                        </RadzenStack>
+                        <RadzenText TextStyle="TextStyle.H3" Style="margin: 0; font-weight: 700;">@todayCount</RadzenText>
+                    </RadzenStack>
+                </RadzenCard>
+            </RadzenColumn>
+        </RadzenRow>
+
+        <!-- Filtres -->
+        <RadzenCard>
+            <RadzenStack Gap="1rem">
+                <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 600;">Filtres</RadzenText>
+                <RadzenRow Gap="1rem">
+                    <RadzenColumn Size="12" SizeSM="6" SizeMD="3">
+                        <RadzenDropDown @bind-Value="@selectedSeverity" 
+                                      Data="@severityOptions" 
+                                      TextProperty="Label"
+                                      ValueProperty="Value"
+                                      Placeholder="Tous les types"
+                                      Change="@OnFilterChange"
+                                      Style="width: 100%;" />
+                    </RadzenColumn>
+                    <RadzenColumn Size="12" SizeSM="6" SizeMD="3">
+                        <RadzenDropDown @bind-Value="@selectedCategory" 
+                                      Data="@categoryOptions" 
+                                      TextProperty="Label"
+                                      ValueProperty="Value"
+                                      Placeholder="Toutes les catégories"
+                                      Change="@OnFilterChange"
+                                      Style="width: 100%;" />
+                    </RadzenColumn>
+                    <RadzenColumn Size="12" SizeSM="6" SizeMD="2">
+                        <RadzenDatePicker @bind-Value="@startDate" 
+                                        DateFormat="dd/MM/yyyy"
+                                        Placeholder="Date de début"
+                                        Change="@OnFilterChange"
+                                        Style="width: 100%;" />
+                    </RadzenColumn>
+                    <RadzenColumn Size="12" SizeSM="6" SizeMD="2">
+                        <RadzenDatePicker @bind-Value="@endDate" 
+                                        DateFormat="dd/MM/yyyy"
+                                        Placeholder="Date de fin"
+                                        Change="@OnFilterChange"
+                                        Style="width: 100%;" />
+                    </RadzenColumn>
+                    <RadzenColumn Size="12" SizeMD="2">
+                        <RadzenTextBox @bind-Value="@searchText" 
+                                     Placeholder="Rechercher..."
+                                     Change="@OnFilterChange"
+                                     Style="width: 100%;" />
+                    </RadzenColumn>
+                </RadzenRow>
+            </RadzenStack>
+        </RadzenCard>
+
+        <!-- Liste des notifications -->
+        @if (filteredNotifications.Any())
+        {
+            <RadzenStack Gap="0.75rem">
+                @foreach (var notification in filteredNotifications)
+                {
+                    <RadzenCard Style="@GetNotificationCardStyle(notification)">
+                        <RadzenStack Orientation="Orientation.Horizontal" Gap="1rem" AlignItems="AlignItems.Start">
+                            <!-- Icône -->
+                            <div style="position: relative;">
+                                <RadzenIcon Icon="@GetSeverityIcon(notification.Severity)" 
+                                          Style="@GetSeverityIconStyle(notification.Severity)" />
+                                @if (!notification.IsRead)
+                                {
+                                    <div style="position: absolute; top: -4px; right: -4px; width: 12px; height: 12px; background: #4361ee; border-radius: 50%; border: 2px solid white;"></div>
+                                }
+                            </div>
+
+                            <!-- Contenu -->
+                            <RadzenStack Style="flex: 1;" Gap="0.5rem">
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start" Gap="1rem">
+                                    <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 600; margin: 0;">
+                                        @notification.Title
+                                    </RadzenText>
+                                    <RadzenStack Orientation="Orientation.Horizontal" Gap="0.25rem">
+                                        @if (!notification.IsRead)
+                                        {
+                                            <RadzenButton Icon="mark_email_read" 
+                                                        ButtonStyle="ButtonStyle.Light"
+                                                        Click="@(() => MarkAsRead(notification))"
+                                                        Title="Marquer comme lu"
+                                                        Size="ButtonSize.Small"
+                                                        Variant="Variant.Flat" />
+                                        }
+                                        <RadzenButton Icon="delete" 
+                                                    ButtonStyle="ButtonStyle.Danger"
+                                                    Click="@(() => DeleteNotification(notification))"
+                                                    Title="Supprimer"
+                                                    Size="ButtonSize.Small"
+                                                    Variant="Variant.Flat" />
+                                    </RadzenStack>
+                                </RadzenStack>
+
+                                <RadzenText TextStyle="TextStyle.Body1" Style="margin: 0;">
+                                    @notification.Message
+                                </RadzenText>
+
+                                <RadzenStack Orientation="Orientation.Horizontal" Gap="0.75rem" Wrap="FlexWrap.Wrap">
+                                    <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="@notification.Category" />
+                                    @if (!string.IsNullOrEmpty(notification.DeviceName))
+                                    {
+                                        <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-text-secondary-color);">
+                                            <RadzenIcon Icon="devices" Style="font-size: 1rem; vertical-align: middle;" /> @notification.DeviceName
+                                        </RadzenText>
+                                    }
+                                    <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-text-secondary-color);">
+                                        <RadzenIcon Icon="schedule" Style="font-size: 1rem; vertical-align: middle;" /> @FormatTimeAgo(notification.Timestamp)
+                                    </RadzenText>
+                                    @if (notification.TriggerValue.HasValue)
+                                    {
+                                        <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-danger);">
+                                            Valeur: @notification.TriggerValue.Value.ToString("F1")
+                                        </RadzenText>
+                                    }
+                                </RadzenStack>
+
+                                @if (!string.IsNullOrEmpty(notification.ActionTaken))
+                                {
+                                    <RadzenAlert AlertStyle="AlertStyle.Success" Variant="Variant.Flat" Size="AlertSize.Small" Style="margin-top: 0.5rem;">
+                                        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" AlignItems="AlignItems.Center">
+                                            <RadzenIcon Icon="play_arrow" />
+                                            <RadzenText TextStyle="TextStyle.Caption">@notification.ActionTaken</RadzenText>
+                                        </RadzenStack>
+                                    </RadzenAlert>
+                                }
+                            </RadzenStack>
+                        </RadzenStack>
+                    </RadzenCard>
+                }
+            </RadzenStack>
+
+            <!-- Pagination -->
+            @if (totalPages > 1)
+            {
+                <RadzenCard>
+                    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.Center" AlignItems="AlignItems.Center" Gap="1rem">
+                        <RadzenButton Icon="chevron_left" 
+                                    Click="PreviousPage" 
+                                    Disabled="@(currentPage == 1)"
+                                    ButtonStyle="ButtonStyle.Light"
+                                    Size="ButtonSize.Medium" />
+                        <RadzenText TextStyle="TextStyle.Body1" Style="font-weight: 500;">
+                            Page @currentPage sur @totalPages
+                        </RadzenText>
+                        <RadzenButton Icon="chevron_right" 
+                                    Click="NextPage" 
+                                    Disabled="@(currentPage == totalPages)"
+                                    ButtonStyle="ButtonStyle.Light"
+                                    Size="ButtonSize.Medium" />
+                    </RadzenStack>
+                </RadzenCard>
+            }
+        }
+        else
+        {
+            <RadzenCard>
+                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem" Style="padding: 3rem;">
+                    <RadzenIcon Icon="notifications_off" Style="font-size: 4rem; color: var(--rz-text-secondary-color); opacity: 0.5;" />
+                    <RadzenText TextStyle="TextStyle.H6" Style="color: var(--rz-text-secondary-color);">
+                        Aucune notification
+                    </RadzenText>
+                    <RadzenText TextStyle="TextStyle.Body1" Style="color: var(--rz-text-secondary-color);">
+                        Aucune notification ne correspond à vos critères de recherche.
+                    </RadzenText>
+                </RadzenStack>
+            </RadzenCard>
+        }
+    }
+</RadzenStack>
+
+@code {
+    private List<NotificationDto> notificationList = new();
+    private List<NotificationDto> filteredNotifications = new();
+    private string selectedSeverity = "all";
+    private string selectedCategory = "all";
+    private DateTime? startDate;
+    private DateTime? endDate;
+    private string searchText = string.Empty;
+    private int currentPage = 1;
+    private int pageSize = 20;
+    private int totalPages = 1;
+    private bool isLoading = true;
+    private string currentUserId = string.Empty;
+    private int unreadCount = 0;
+    private int criticalCount = 0;
+    private int todayCount = 0;
+
+    private List<DropdownItem> severityOptions = new()
+    {
+        new DropdownItem { Label = "Tous les types", Value = "all" },
+        new DropdownItem { Label = "Critique", Value = "Critical" },
+        new DropdownItem { Label = "Avertissement", Value = "Warning" },
+        new DropdownItem { Label = "Information", Value = "Info" },
+        new DropdownItem { Label = "Succès", Value = "Success" }
+    };
+
+    private List<DropdownItem> categoryOptions = new()
+    {
+        new DropdownItem { Label = "Toutes les catégories", Value = "all" },
+        new DropdownItem { Label = "Poussins", Value = "Poussins" },
+        new DropdownItem { Label = "Ventilateur", Value = "Ventilateur" },
+        new DropdownItem { Label = "Lampe chauffante", Value = "Lampe chauffante" },
+        new DropdownItem { Label = "Distributeur nourriture", Value = "Distributeur nourriture" },
+        new DropdownItem { Label = "Distributeur eau", Value = "Distributeur eau" },
+        new DropdownItem { Label = "Température", Value = "Température" },
+        new DropdownItem { Label = "Humidité", Value = "Humidité" },
+        new DropdownItem { Label = "Poussière", Value = "Poussière" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            currentUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        }
+
+        await LoadNotifications();
+    }
+
+    private void NavigateToSettings()
+    {
+        Navigation.NavigateTo("/notification-settings");
+    }
+
+    private async Task LoadNotifications()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            notificationList = await NotificationService.GetUserNotificationsAsync(currentUserId);
+            
+            // Calculer les statistiques
+            unreadCount = notificationList.Count(n => !n.IsRead);
+            criticalCount = notificationList.Count(n => n.Severity == "Critical");
+            todayCount = notificationList.Count(n => n.Timestamp.Date == DateTime.Today);
+            
+            ApplyFilters();
+            
+            ToastService.Notify(new NotificationMessage 
+            { 
+                Severity = NotificationSeverity.Success, 
+                Summary = "Notifications chargées", 
+                Duration = 3000 
+            });
+        }
+        catch (Exception ex)
+        {
+            ToastService.Notify(new NotificationMessage 
+            { 
+                Severity = NotificationSeverity.Error, 
+                Summary = "Erreur", 
+                Detail = $"Impossible de charger les notifications: {ex.Message}", 
+                Duration = 5000 
+            });
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ApplyFilters()
+    {
+        var query = notificationList.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(selectedSeverity) && selectedSeverity != "all")
+        {
+            query = query.Where(n => n.Severity == selectedSeverity);
+        }
+
+        if (!string.IsNullOrEmpty(selectedCategory) && selectedCategory != "all")
+        {
+            query = query.Where(n => n.Category == selectedCategory);
+        }
+
+        if (startDate.HasValue)
+        {
+            query = query.Where(n => n.Timestamp >= startDate.Value);
+        }
+
+        if (endDate.HasValue)
+        {
+            query = query.Where(n => n.Timestamp <= endDate.Value.AddDays(1));
+        }
+
+        if (!string.IsNullOrEmpty(searchText))
+        {
+            query = query.Where(n => 
+                n.Title.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                n.Message.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                n.Category.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrEmpty(n.DeviceName) && n.DeviceName.Contains(searchText, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        query = query.OrderByDescending(n => n.Timestamp);
+
+        var allFiltered = query.ToList();
+        totalPages = (int)Math.Ceiling((double)allFiltered.Count / pageSize);
+        filteredNotifications = allFiltered.Skip((currentPage - 1) * pageSize).Take(pageSize).ToList();
+    }
+
+    private void OnFilterChange()
+    {
+        currentPage = 1;
+        ApplyFilters();
+    }
+
+    private void PreviousPage()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            ApplyFilters();
+        }
+    }
+
+    private void NextPage()
+    {
+        if (currentPage < totalPages)
+        {
+            currentPage++;
+            ApplyFilters();
+        }
+    }
+
+    private async Task MarkAsRead(NotificationDto notification)
+    {
+        try
+        {
+            var success = await NotificationService.MarkAsReadAsync(notification.Id, currentUserId);
+            
+            if (success)
+            {
+                notification.IsRead = true;
+                unreadCount--;
+                StateHasChanged();
+                
+                ToastService.Notify(new NotificationMessage 
+                { 
+                    Severity = NotificationSeverity.Success, 
+                    Summary = "Marquée comme lue", 
+                    Duration = 2000 
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.Notify(new NotificationMessage 
+            { 
+                Severity = NotificationSeverity.Error, 
+                Summary = "Erreur", 
+                Detail = ex.Message, 
+                Duration = 4000 
+            });
+        }
+    }
+
+    private async Task MarkAllAsRead()
+    {
+        try
+        {
+            var success = await NotificationService.MarkAllAsReadAsync(currentUserId);
+            
+            if (success)
+            {
+                foreach (var notification in notificationList.Where(n => !n.IsRead))
+                {
+                    notification.IsRead = true;
+                }
+                unreadCount = 0;
+                StateHasChanged();
+                
+                ToastService.Notify(new NotificationMessage 
+                { 
+                    Severity = NotificationSeverity.Success, 
+                    Summary = "Toutes marquées comme lues", 
+                    Duration = 3000 
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.Notify(new NotificationMessage 
+            { 
+                Severity = NotificationSeverity.Error, 
+                Summary = "Erreur", 
+                Detail = ex.Message, 
+                Duration = 4000 
+            });
+        }
+    }
+
+    private async Task DeleteNotification(NotificationDto notification)
+    {
+        try
+        {
+            var success = await NotificationService.DeleteNotificationAsync(notification.Id, currentUserId);
+            
+            if (success)
+            {
+                notificationList.Remove(notification);
+                if (!notification.IsRead) unreadCount--;
+                if (notification.Severity == "Critical") criticalCount--;
+                if (notification.Timestamp.Date == DateTime.Today) todayCount--;
+                
+                ApplyFilters();
+                
+                ToastService.Notify(new NotificationMessage 
+                { 
+                    Severity = NotificationSeverity.Success, 
+                    Summary = "Notification supprimée", 
+                    Duration = 2000 
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.Notify(new NotificationMessage 
+            { 
+                Severity = NotificationSeverity.Error, 
+                Summary = "Erreur", 
+                Detail = ex.Message, 
+                Duration = 4000 
+            });
+        }
+    }
+
+    private string GetSeverityIcon(string severity)
+    {
+        return severity switch
+        {
+            "Critical" => "warning",
+            "Warning" => "error_outline",
+            "Info" => "info",
+            "Success" => "check_circle",
+            _ => "notifications"
+        };
+    }
+
+    private string GetSeverityIconStyle(string severity)
+    {
+        var color = severity switch
+        {
+            "Critical" => "#e74c3c",
+            "Warning" => "#f39c12",
+            "Info" => "#3498db",
+            "Success" => "#06d6a0",
+            _ => "#6c757d"
+        };
+        return $"font-size: 1.5rem; color: {color};";
+    }
+
+    private string GetNotificationCardStyle(NotificationDto notification)
+    {
+        var borderColor = notification.Severity switch
+        {
+            "Critical" => "#e74c3c",
+            "Warning" => "#f39c12",
+            "Info" => "#3498db",
+            "Success" => "#06d6a0",
+            _ => "#e9ecef"
+        };
+
+        var backgroundColor = notification.IsRead ? "transparent" : "rgba(67, 97, 238, 0.02)";
+        var borderWidth = notification.IsRead ? "3px" : "4px";
+
+        return $"border-left: {borderWidth} solid {borderColor}; background: {backgroundColor}; transition: all 0.3s ease;";
+    }
+
+    private string FormatTimeAgo(DateTime timestamp)
+    {
+        var timeSpan = DateTime.Now - timestamp;
+        
+        if (timeSpan.TotalMinutes < 1) return "À l'instant";
+        if (timeSpan.TotalHours < 1) return $"{(int)timeSpan.TotalMinutes} min";
+        if (timeSpan.TotalDays < 1) return $"{(int)timeSpan.TotalHours} h";
+        if (timeSpan.TotalDays < 7) return $"{(int)timeSpan.TotalDays} j";
+        
+        return timestamp.ToString("dd/MM/yyyy HH:mm");
+    }
+
+    public class DropdownItem
+    {
+        public string Label { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+}

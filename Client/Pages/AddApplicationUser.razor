@@ -1,0 +1,123 @@
+@page "/add-application-user"
+@attribute [Authorize]
+@using SmartNest.Client.Services
+@using System.Net.Http.Json
+@inject Microsoft.Extensions.Localization.IStringLocalizer<AddApplicationUser> L
+@inject DialogService DialogService
+@inject UserService UserService
+@inject NotificationService NotificationService
+
+<RadzenRow>
+    <RadzenColumn SizeMD="12">
+        <RadzenTemplateForm TItem="CreateUserDto" Data="@user" Visible="@(user != null)" Submit="@FormSubmit">
+            <RadzenAlert Title="Cannot create user" Shade="Shade.Lighter" Variant="Variant.Flat" Size="AlertSize.Small" AlertStyle="AlertStyle.Danger" Visible="@errorVisible">@error</RadzenAlert>
+
+            <RadzenStack style="margin-bottom: 1rem;">
+                <RadzenFormField Text="Email" Variant="Variant.Flat">
+                    <ChildContent>
+                        @if (user != null)
+                        {
+                            <RadzenTextBox style="width: 100%" @bind-Value="@(user.Email)" Name="Email" />
+                        }
+                    </ChildContent>
+                    <Helper>
+                        <RadzenRequiredValidator Component="Email" Text="Email is required" />
+                    </Helper>
+                </RadzenFormField>
+                <RadzenFormField Text="Roles" Variant="Variant.Flat">
+                    <ChildContent>
+                        @if (roles != null && user != null)
+                        {
+                            <RadzenDropDown Data="@roles" Multiple="true" style="width: 100%" TextProperty="Name" @bind-Value="@(user.RoleIds)" ValueProperty="Id" Name="Roles" />
+                        }
+                    </ChildContent>
+                </RadzenFormField>
+                <RadzenFormField Text="Password" Variant="Variant.Flat">
+                    <ChildContent>
+                        @if (user != null)
+                        {
+                            <RadzenPassword style="display: block; width: 100%" @bind-Value="@(user.Password)" Name="Password" />
+                        }
+                    </ChildContent>
+                    <Helper>
+                        <RadzenRequiredValidator Component="Password" Text="Password is required" />
+                    </Helper>
+                </RadzenFormField>
+                <RadzenFormField Text="Confirm Password" Variant="Variant.Flat">
+                    <ChildContent>
+                        @if (user != null)
+                        {
+                            <RadzenPassword style="display: block; width: 100%" @bind-Value="@(user.ConfirmPassword)" Name="ConfirmPassword" />
+                        }
+                    </ChildContent>
+                    <Helper>
+                        <RadzenRequiredValidator Component="ConfirmPassword" Text="ConfirmPassword is required" />
+                        <RadzenCompareValidator Text="Passwords must match" Component="ConfirmPassword" Value="@user?.Password" />
+                    </Helper>
+                </RadzenFormField>
+            </RadzenStack>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.End" Gap="0.5rem">
+                    <RadzenButton ButtonType="ButtonType.Submit" Icon="save" Text="Save" Variant="Variant.Flat" IsBusy="@isBusy" />
+                    <RadzenButton ButtonStyle="ButtonStyle.Light" Text="Cancel" Click="@CancelClick" Variant="Variant.Flat" />
+            </RadzenStack>
+        </RadzenTemplateForm>
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    protected CreateUserDto user = new();
+    protected List<RoleDto> roles = new();
+    protected bool errorVisible;
+    protected string? error;
+    protected bool isBusy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = new CreateUserDto();
+        roles = await UserService.GetAllRolesAsync();
+    }
+
+    protected async Task FormSubmit()
+    {
+        try
+        {
+            isBusy = true;
+            errorVisible = false;
+            
+            var response = await UserService.CreateUserAsync(user);
+
+            if (response.IsSuccessStatusCode)
+            {
+                NotificationService.Notify(new NotificationMessage 
+                { 
+                    Severity = NotificationSeverity.Success, 
+                    Summary = "Success", 
+                    Detail = "User created successfully", 
+                    Duration = 4000 
+                });
+                
+                DialogService.Close(true);
+            }
+            else
+            {
+                var errors = await response.Content.ReadFromJsonAsync<List<IdentityErrorDto>>();
+                errorVisible = true;
+                error = errors != null ? string.Join(", ", errors.Select(e => e.Description)) : "An error occurred";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorVisible = true;
+            error = ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    protected void CancelClick()
+    {
+        DialogService.Close(false);
+    }
+}

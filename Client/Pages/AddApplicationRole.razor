@@ -1,0 +1,97 @@
+@page "/add-application-role"
+@attribute [Authorize]
+@using SmartNest.Server.Models
+@using SmartNest.Client.Services
+@using System.Net.Http.Json;
+@inject Microsoft.Extensions.Localization.IStringLocalizer<AddApplicationRole> L
+@inject DialogService DialogService
+@inject RoleService RoleService
+@inject NotificationService NotificationService
+
+<RadzenRow>
+    <RadzenColumn SizeMD="12">
+        <RadzenTemplateForm TItem="SmartNest.Server.Models.ApplicationRole" Data="@role" Visible="@(role != null)" Submit="@FormSubmit">
+            <RadzenAlert Title="Cannot create role" Shade="Shade.Lighter" Variant="Variant.Flat" Size="AlertSize.Small" AlertStyle="AlertStyle.Danger" Visible="@errorVisible">@error</RadzenAlert>
+
+            <RadzenStack style="margin-bottom: 1rem;">
+                <RadzenFormField Text="Name" Variant="Variant.Flat">
+                    <ChildContent>
+                        @if (role != null)
+                        {
+                            <RadzenTextBox style="width: 100%" @bind-Value="role.Name" Name="Name" />
+                        }
+                    </ChildContent>
+                    <Helper>
+                        <RadzenRequiredValidator Component="Name" Text="Name is required" />
+                    </Helper>
+                </RadzenFormField>
+            </RadzenStack>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.End" Gap="0.5rem">
+                    <RadzenButton ButtonType="ButtonType.Submit" Icon="save" Text="Save" Variant="Variant.Flat" IsBusy="@isBusy" />
+                    <RadzenButton ButtonStyle="ButtonStyle.Light" Text="Cancel" Click="@CancelClick" Variant="Variant.Flat" />
+            </RadzenStack>
+        </RadzenTemplateForm>
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    protected ApplicationRole role = new();
+    protected bool errorVisible;
+    protected string? error;
+    protected bool isBusy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        role = new ApplicationRole();
+    }
+
+    protected async Task FormSubmit()
+    {
+        try
+        {
+            isBusy = true;
+            errorVisible = false;
+            
+            var response = await RoleService.CreateRoleAsync(role);
+
+            if (response.IsSuccessStatusCode)
+            {
+                NotificationService.Notify(new NotificationMessage 
+                { 
+                    Severity = NotificationSeverity.Success, 
+                    Summary = "Success", 
+                    Detail = "Role created successfully", 
+                    Duration = 4000 
+                });
+                
+                DialogService.Close(true);
+            }
+            else
+            {
+                var errors = await response.Content.ReadFromJsonAsync<List<IdentityError>>();
+                errorVisible = true;
+                error = errors != null ? string.Join(", ", errors.Select(e => e.Description)) : "An error occurred";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorVisible = true;
+            error = ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    protected void CancelClick()
+    {
+        DialogService.Close(false);
+    }
+
+    public class IdentityError
+    {
+        public string? Code { get; set; }
+        public string? Description { get; set; }
+    }
+}

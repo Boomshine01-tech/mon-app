@@ -1,0 +1,370 @@
+@page "/chicks"
+@attribute [Authorize]
+@using SmartNest.Server.Models.postgres
+@using SmartNest.Server.Models
+@using SmartNest.Client.Services
+@using Radzen
+@using Radzen.Blazor
+@inject IYoloDataService YoloDataService
+@inject NotificationService NotificationService
+@inject ILogger<Chicks> Logger
+@implements IDisposable
+
+<PageTitle>Poussins - SmartNest</PageTitle>
+
+<RadzenStack Gap="20px">
+    <!-- En-tête -->
+    <RadzenCard>
+        <div class="row align-items-center">
+            <div class="col">
+                <RadzenText Style="font-size: 24px; font-weight: bold;">🐣 Gestion des Poussins</RadzenText>
+                <RadzenText Style="color: #666;">Surveillance YOLO en temps réel</RadzenText>
+            </div>
+            <div class="col-auto">
+                <RadzenButton Click="RefreshData" Icon="refresh" Text="Rafraîchir" 
+                             ButtonStyle="ButtonStyle.Primary" Disabled="@loading" 
+                             Style="margin-left: 10px;" />
+            </div>
+        </div>
+    </RadzenCard>
+
+    <!-- Statistiques -->
+    @if (statistics != null && statistics.TotalCount > 0)
+    {
+        <div class="row">
+            <div class="col-md-3">
+                <RadzenCard class="stat-card total">
+                    <div class="stat-icon">🐣</div>
+                    <div class="stat-value">@statistics.TotalCount</div>
+                    <div class="stat-label">Total Poussins</div>
+                </RadzenCard>
+            </div>
+            <div class="col-md-3">
+                <RadzenCard class="stat-card healthy">
+                    <div class="stat-icon">✅</div>
+                    <div class="stat-value">@statistics.HealthyCount</div>
+                    <div class="stat-label">Sains (@statistics.HealthyPercentage.ToString("F1")%)</div>
+                </RadzenCard>
+            </div>
+            <div class="col-md-3">
+                <RadzenCard class="stat-card warning">
+                    <div class="stat-icon">⚠️</div>
+                    <div class="stat-value">@statistics.WarningCount</div>
+                    <div class="stat-label">Surveillance</div>
+                </RadzenCard>
+            </div>
+            <div class="col-md-3">
+                <RadzenCard class="stat-card sick">
+                    <div class="stat-icon">❌</div>
+                    <div class="stat-value">@statistics.SickCount</div>
+                    <div class="stat-label">Malades (@statistics.SickPercentage.ToString("F1")%)</div>
+                </RadzenCard>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <RadzenCard>
+                    <RadzenText Style="font-weight: bold; margin-bottom: 10px;">📊 Poids Moyen</RadzenText>
+                    <RadzenText Style="font-size: 28px; color: #3498db;">
+                        @statistics.AverageWeight.ToString("F1") g
+                    </RadzenText>
+                </RadzenCard>
+            </div>
+            <div class="col-md-6">
+                <RadzenCard>
+                    <RadzenText Style="font-weight: bold; margin-bottom: 10px;">📅 Âge Moyen</RadzenText>
+                    <RadzenText Style="font-size: 28px; color: #3498db;">
+                        @statistics.AverageAge.ToString("F0") jours
+                    </RadzenText>
+                </RadzenCard>
+            </div>
+        </div>
+
+        @if (statistics.AlertLevel != "Low")
+        {
+            <RadzenAlert AlertStyle="@GetAlertStyle(statistics.AlertLevel)" Variant="Variant.Flat">
+                <RadzenText Style="font-weight: bold;">
+                    ⚠️ Niveau d'alerte: @statistics.AlertLevel
+                </RadzenText>
+                <RadzenText>
+                    @statistics.SickCount poussins malades détectés. Intervention recommandée.
+                </RadzenText>
+            </RadzenAlert>
+        }
+    }
+
+    <!-- Liste des détections -->
+    <RadzenCard>
+        <RadzenStack Gap="15px">
+            <div class="row align-items-center">
+                <div class="col">
+                    <RadzenText Style="font-size: 18px; font-weight: bold;">
+                        📋 Détections YOLO (@chicksData.Count)
+                    </RadzenText>
+                    <RadzenText Size="TextSize.Small" Style="color: #666;">
+                        Dernière mise à jour: @(statistics?.LastUpdate.ToString("HH:mm:ss") ?? "N/A")
+                    </RadzenText>
+                </div>
+            </div>
+
+            @if (loading)
+            {
+                <div class="loading-container">
+                    <RadzenProgressBar Style="width: 100%;" Mode="ProgressBarMode.Indeterminate" />
+                    <RadzenText Style="text-align: center; margin-top: 10px;">
+                        Chargement des détections YOLO...
+                    </RadzenText>
+                </div>
+            }
+            else if (!chicksData.Any())
+            {
+                <div class="empty-state">
+                    <RadzenIcon Icon="pets" Style="font-size: 64px; color: #ccc;" />
+                    <RadzenText Style="font-size: 20px; color: #666; margin-top: 15px; font-weight: bold;">
+                        Aucune volaille détectée
+                    </RadzenText>
+                    <RadzenText Size="TextSize.Small" Style="color: #999; margin-top: 10px;">
+                        Cliquez sur "Rafraîchir" pour lancer une nouvelle détection YOLO
+                    </RadzenText>
+                </div>
+            }
+            else
+            {
+                <RadzenDataGrid @ref="grid" TItem="Chick" Data="@chicksData" 
+                              AllowFiltering="true" AllowSorting="true" 
+                              AllowPaging="true" PageSize="10" 
+                              Style="width: 100%;">
+                    
+                    <Columns>
+                        <RadzenDataGridColumn TItem="Chick" Property="ChickId" Title="ID">
+                            <Template Context="chick">
+                                <RadzenBadge Text="@chick.ChickId" BadgeStyle="BadgeStyle.Info" />
+                            </Template>
+                        </RadzenDataGridColumn>
+
+                        <RadzenDataGridColumn TItem="Chick" Property="X" Title="Position X" />
+                        <RadzenDataGridColumn TItem="Chick" Property="Y" Title="Position Y" />
+
+                        <RadzenDataGridColumn TItem="Chick" Property="Confidence" Title="Confiance">
+                            <Template Context="chick">
+                                <RadzenProgressBar Value="@(chick.Confidence * 100)" 
+                                                 ShowValue="true" 
+                                                 Style="width: 100px;" />
+                            </Template>
+                        </RadzenDataGridColumn>
+
+                        <RadzenDataGridColumn TItem="Chick" Property="healthstate" Title="État">
+                            <Template Context="chick">
+                                <RadzenBadge Text="@chick.healthstate" 
+                                           BadgeStyle="@GetHealthBadgeStyle(chick.healthstate)" />
+                            </Template>
+                        </RadzenDataGridColumn>
+
+                        <RadzenDataGridColumn TItem="Chick" Property="Age" Title="Âge">
+                            <Template Context="chick">
+                                @chick.Age jours
+                                <RadzenText Size="TextSize.ExtraSmall" Style="color: #999;">
+                                    (@chick.AgeCategory)
+                                </RadzenText>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        
+                        <RadzenDataGridColumn TItem="Chick" Property="Weight" Title="Poids">
+                            <Template Context="chick">
+                                @chick.Weight.ToString("F1") g
+                                <RadzenText Size="TextSize.ExtraSmall" Style="color: #999;">
+                                    (@chick.WeightCategory)
+                                </RadzenText>
+                            </Template>
+                        </RadzenDataGridColumn>
+
+                        <RadzenDataGridColumn TItem="Chick" Property="LastUpdated" Title="Détecté">
+                            <Template Context="chick">
+                                @chick.LastUpdated.ToString("HH:mm:ss")
+                            </Template>
+                        </RadzenDataGridColumn>
+
+                        <RadzenDataGridColumn TItem="Chick" Title="Actions" Sortable="false" Filterable="false">
+                            <Template Context="chick">
+                                <RadzenButton Icon="visibility" Size="ButtonSize.Small" 
+                                            ButtonStyle="ButtonStyle.Info"
+                                            Click="@(() => ShowDetails(chick))" 
+                                            Style="margin-right: 5px;" />
+                                
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            }
+        </RadzenStack>
+    </RadzenCard>
+</RadzenStack>
+
+<style>
+    .stat-card {
+        text-align: center;
+        padding: 20px;
+        transition: transform 0.2s;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+
+    .stat-card.total { border-left: 4px solid #3498db; }
+    .stat-card.healthy { border-left: 4px solid #2ecc71; }
+    .stat-card.warning { border-left: 4px solid #f39c12; }
+    .stat-card.sick { border-left: 4px solid #e74c3c; }
+
+    .stat-icon {
+        font-size: 48px;
+        margin-bottom: 10px;
+    }
+
+    .stat-value {
+        font-size: 36px;
+        font-weight: bold;
+        color: #2c3e50;
+    }
+
+    .stat-label {
+        font-size: 14px;
+        color: #7f8c8d;
+        margin-top: 5px;
+    }
+
+    .loading-container {
+        padding: 40px;
+        text-align: center;
+    }
+
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 60px 20px;
+        text-align: center;
+    }
+</style>
+
+@code {
+    private List<Chick> chicksData = new List<Chick>();
+    private ChickStatistics? statistics;
+    private bool loading = false;
+    private RadzenDataGrid<Chick>? grid;
+    private System.Timers.Timer? autoRefreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        StartAutoRefresh();
+    }
+
+    private void StartAutoRefresh()
+    {
+        autoRefreshTimer = new System.Timers.Timer(10000); // 10 secondes
+        autoRefreshTimer.Elapsed += async (s, e) =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await LoadData();
+                StateHasChanged();
+            });
+        };
+        autoRefreshTimer.Start();
+        Logger.LogInformation("⏱️ Auto-refresh started (10s interval)");
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            Logger.LogInformation("📡 Loading chicks data...");
+            
+            var chicksTask = YoloDataService.GetYoloDetectionsAsync();
+            var statsTask = YoloDataService.GetStatisticsAsync();
+
+            await Task.WhenAll(chicksTask, statsTask);
+
+            chicksData = await chicksTask;
+            statistics = await statsTask;
+
+            Logger.LogInformation($"✅ Loaded {chicksData.Count} chicks");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "❌ Error loading data");
+            ShowNotification("Erreur de chargement", NotificationSeverity.Error);
+        }
+    }
+
+    private async Task RefreshData()
+    {
+        loading = true;
+        StateHasChanged();
+
+        try
+        {
+            await LoadData();
+            ShowNotification($"✅ {chicksData.Count} poussins détectés", NotificationSeverity.Success);
+        }
+        finally
+        {
+            loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowDetails(Chick chick)
+    {
+        var message = $@"
+            Poussin {chick.ChickId}
+            État: {chick.healthstate}
+            Âge: {chick.Age} jours ({chick.AgeCategory})
+            Poids: {chick.Weight:F1}g ({chick.WeightCategory})
+            Confiance: {chick.Confidence:P0}
+        ";
+        ShowNotification(message, NotificationSeverity.Info);
+    }
+
+    private BadgeStyle GetHealthBadgeStyle(string healthStatus)
+    {
+        return healthStatus switch
+        {
+            "Healthy" => BadgeStyle.Success,
+            "Warning" => BadgeStyle.Warning,
+            "Sick" => BadgeStyle.Danger,
+            _ => BadgeStyle.Secondary
+        };
+    }
+
+    private AlertStyle GetAlertStyle(string alertLevel)
+    {
+        return alertLevel switch
+        {
+            "Critical" => AlertStyle.Danger,
+            "High" => AlertStyle.Warning,
+            "Medium" => AlertStyle.Info,
+            _ => AlertStyle.Success
+        };
+    }
+
+    private void ShowNotification(string message, NotificationSeverity severity)
+    {
+        NotificationService.Notify(new NotificationMessage
+        {
+            Severity = severity,
+            Summary = message,
+            Duration = 4000
+        });
+    }
+
+    public void Dispose()
+    {
+        autoRefreshTimer?.Stop();
+        autoRefreshTimer?.Dispose();
+        Logger.LogInformation("⏱️ Auto-refresh stopped");
+    }
+}

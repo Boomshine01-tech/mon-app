@@ -1,0 +1,149 @@
+@page "/edit-application-user/{Id}"
+@attribute [Authorize]
+@using SmartNest.Client.Services
+@using System.Net.Http.Json
+@inject Microsoft.Extensions.Localization.IStringLocalizer<EditApplicationUser> L
+@inject DialogService DialogService
+@inject UserService UserService
+@inject NotificationService NotificationService
+
+<RadzenRow>
+    <RadzenColumn SizeMD="12">
+        <RadzenTemplateForm TItem="UpdateUserDto" Data="@user" Visible="@(user != null)" Submit="@FormSubmit">
+            <RadzenAlert Title="Cannot update user" Shade="Shade.Lighter" Variant="Variant.Flat" Size="AlertSize.Small" AlertStyle="AlertStyle.Danger" Visible="@errorVisible">@error</RadzenAlert>
+
+            <RadzenStack style="margin-bottom: 1rem;">
+                <RadzenFormField Text="User name" Variant="Variant.Flat">
+                    <ChildContent>
+                        <RadzenTextBox Disabled="true" style="width: 100%" @bind-Value="@(userName)" Name="UserName" />
+                    </ChildContent>
+                </RadzenFormField>
+                <RadzenFormField Text="Email" Variant="Variant.Flat">
+                    <ChildContent>
+                        @if (user != null)
+                        {
+                            <RadzenTextBox style="width: 100%" @bind-Value="@(user.Email)" Name="Email" />
+                        }
+                    </ChildContent>
+                </RadzenFormField>
+                <RadzenFormField Text="Roles" Variant="Variant.Flat">
+                    <ChildContent>
+                        @if (user != null)
+                        {
+                            <RadzenDropDown Data="@roles" Multiple="true" style="width: 100%" TextProperty="Name" @bind-Value="@(user.RoleIds)" ValueProperty="Id" Name="Roles" />
+                        }
+                    </ChildContent>
+                </RadzenFormField>
+                <RadzenFormField Text="Password" Variant="Variant.Flat">
+                    <ChildContent>
+                        @if (user != null)
+                        {
+                            <RadzenPassword @bind-Value="@(user.Password)" style="display: block; width: 100%" Name="Password" />
+                        }
+                    </ChildContent>
+                    <Helper>
+                        <RadzenText TextStyle="TextStyle.Caption">Leave blank to keep current password</RadzenText>
+                    </Helper>
+                </RadzenFormField>
+                <RadzenFormField Text="Confirm Password" Variant="Variant.Flat">
+                    <ChildContent>
+                        @if (user != null)
+                        {
+                            <RadzenPassword style="display: block; width: 100%" @bind-Value="@(user.ConfirmPassword)" Name="ConfirmPassword" />
+                        }
+                    </ChildContent>
+                    <Helper>
+                        @if (!string.IsNullOrEmpty(user?.Password))
+                        {
+                           <RadzenCompareValidator Text="Passwords must match" Component="ConfirmPassword" Value="@user.Password" />
+                        }
+                    </Helper>
+                </RadzenFormField>
+            </RadzenStack>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.End" Gap="0.5rem">
+                    <RadzenButton ButtonType="ButtonType.Submit" Icon="save" Text="Save" Variant="Variant.Flat" IsBusy="@isBusy" />
+                    <RadzenButton ButtonStyle="ButtonStyle.Light" Text="Cancel" Click="@CancelClick" Variant="Variant.Flat" />
+            </RadzenStack>
+        </RadzenTemplateForm>
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    [Parameter]
+    public string Id { get; set; } = string.Empty;
+
+    protected UpdateUserDto user = new UpdateUserDto();
+    protected string userName = string.Empty;
+    protected List<RoleDto> roles = new();
+    protected bool errorVisible;
+    protected string? error;
+    protected bool isBusy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var userDetail = await UserService.GetUserAsync(Id);
+            if (userDetail != null)
+            {
+                userName = userDetail.UserName;
+                user = new UpdateUserDto
+                {
+                    Email = userDetail.Email,
+                    RoleIds = userDetail.RoleIds
+                };
+            }
+            
+            roles = await UserService.GetAllRolesAsync();
+        }
+        catch (Exception ex)
+        {
+            errorVisible = true;
+            error = ex.Message;
+        }
+    }
+
+    protected async Task FormSubmit()
+    {
+        try
+        {
+            isBusy = true;
+            errorVisible = false;
+            
+            var response = await UserService.UpdateUserAsync(Id, user);
+
+            if (response.IsSuccessStatusCode)
+            {
+                NotificationService.Notify(new NotificationMessage 
+                { 
+                    Severity = NotificationSeverity.Success, 
+                    Summary = "Success", 
+                    Detail = "User updated successfully", 
+                    Duration = 4000 
+                });
+                
+                DialogService.Close(true);
+            }
+            else
+            {
+                var errors = await response.Content.ReadFromJsonAsync<List<IdentityErrorDto>>();
+                errorVisible = true;
+                error = errors != null ? string.Join(", ", errors.Select(e => e.Description)) : "An error occurred";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorVisible = true;
+            error = ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    protected void CancelClick()
+    {
+        DialogService.Close(false);
+    }
+}

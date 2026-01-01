@@ -1,0 +1,134 @@
+@page "/edit-application-tenant/{Id}"
+@attribute [Authorize]
+@using SmartNest.Client.Services
+@inject Microsoft.Extensions.Localization.IStringLocalizer<EditApplicationTenant> L
+@inject DialogService DialogService
+@inject TenantService TenantService
+@inject NotificationService NotificationService
+
+<RadzenRow>
+    <RadzenColumn SizeMD="12">
+        @if (isLoading)
+        {
+            <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+        }
+        else if (tenant != null)
+        {
+            <RadzenTemplateForm TItem="UpdateTenantDto" Data="@tenant" Submit="@FormSubmit">
+                <RadzenAlert Title="Cannot update tenant" Shade="Shade.Lighter" Variant="Variant.Flat" Size="AlertSize.Small" AlertStyle="AlertStyle.Danger" Visible="@errorVisible">@error</RadzenAlert>
+
+                <RadzenStack style="margin-bottom: 1rem;">
+                    <RadzenFormField Text="Name" Variant="Variant.Flat">
+                        <ChildContent>
+                            <RadzenTextBox style="width: 100%" @bind-Value="@(tenant.Name)" Name="Name" />
+                        </ChildContent>
+                        <Helper>
+                            <RadzenRequiredValidator Component="Name" Text="Name is required" />
+                        </Helper>
+                    </RadzenFormField>
+                    <RadzenFormField Text="Hosts" Variant="Variant.Flat">
+                        <ChildContent>
+                            <RadzenTextBox style="width: 100%" @bind-Value="@(tenant.Hosts)" Name="Hosts" />
+                        </ChildContent>
+                        <Helper>
+                            <RadzenRequiredValidator Component="Hosts" Text="Hosts is required" />
+                            <RadzenText TextStyle="TextStyle.Caption">Enter comma-separated hostnames (e.g., tenant1.example.com, tenant1.com)</RadzenText>
+                        </Helper>
+                    </RadzenFormField>
+                </RadzenStack>
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.End" Gap="0.5rem">
+                        <RadzenButton ButtonType="ButtonType.Submit" Icon="save" Text="Save" Variant="Variant.Flat" IsBusy="@isBusy" />
+                        <RadzenButton ButtonStyle="ButtonStyle.Light" Text="Cancel" Click="@CancelClick" Variant="Variant.Flat" />
+                </RadzenStack>
+            </RadzenTemplateForm>
+        }
+        else
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat">
+                Tenant not found
+            </RadzenAlert>
+        }
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    [Parameter]
+    public string Id { get; set; } = string.Empty;
+
+    protected UpdateTenantDto tenant = new UpdateTenantDto();
+    protected bool errorVisible;
+    protected string error = string.Empty;
+    protected bool isBusy;
+    protected bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            isLoading = true;
+            var tenantDto = await TenantService.GetTenantAsync(Id);
+            
+            if (tenantDto != null)
+            {
+                tenant = new UpdateTenantDto
+                {
+                    Name = tenantDto.Name,
+                    Hosts = tenantDto.Hosts
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            errorVisible = true;
+            error = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    protected async Task FormSubmit()
+    {
+        try
+        {
+            isBusy = true;
+            errorVisible = false;
+            
+            var response = await TenantService.UpdateTenantAsync(Id, tenant);
+
+            if (response.IsSuccessStatusCode)
+            {
+                NotificationService.Notify(new NotificationMessage 
+                { 
+                    Severity = NotificationSeverity.Success, 
+                    Summary = "Success", 
+                    Detail = "Tenant updated successfully", 
+                    Duration = 4000 
+                });
+                
+                DialogService.Close(true);
+            }
+            else
+            {
+                errorVisible = true;
+                var errorContent = await response.Content.ReadAsStringAsync();
+                error = string.IsNullOrEmpty(errorContent) ? "An error occurred" : errorContent;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorVisible = true;
+            error = ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    protected void CancelClick()
+    {
+        DialogService.Close(false);
+    }
+}

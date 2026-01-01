@@ -1,0 +1,454 @@
+@page "/notification-settings"
+@attribute [Authorize]
+@using Radzen
+@using Radzen.Blazor
+@using SmartNest.Client.Services
+@using SmartNest.Client.Models
+@using System.Security.Claims
+@inject INotificationUIService NotificationService
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NotificationService ToastService
+
+<PageTitle>Paramètres des Notifications - SmartNest</PageTitle>
+
+<RadzenStack Gap="1rem" Class="rz-p-4 rz-p-md-6">
+    <!-- En-tête -->
+    <RadzenCard>
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenIcon Icon="settings" Style="font-size: 2rem; color: var(--rz-primary);" />
+                <RadzenStack Gap="0">
+                    <RadzenText TextStyle="TextStyle.H4" Style="margin: 0;">Paramètres des notifications</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color);">
+                        Configurez les seuils d'alerte et les modes d'envoi
+                    </RadzenText>
+                </RadzenStack>
+            </RadzenStack>
+            
+            <RadzenButton Click="NavigateBack" 
+                        Text="Retour" 
+                        ButtonStyle="ButtonStyle.Secondary"
+                        Icon="arrow_back"
+                        Size="ButtonSize.Medium" />
+        </RadzenStack>
+    </RadzenCard>
+
+    @if (isLoading)
+    {
+        <RadzenCard>
+            <RadzenStack AlignItems="AlignItems.Center" Gap="1rem" Style="padding: 3rem;">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Large" />
+                <RadzenText TextStyle="TextStyle.Body1">Chargement des paramètres...</RadzenText>
+            </RadzenStack>
+        </RadzenCard>
+    }
+    else
+    {
+        <!-- Activation/Désactivation globale -->
+        <RadzenCard>
+            <RadzenStack Gap="1rem">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenIcon Icon="notifications_active" Style="font-size: 1.5rem; color: var(--rz-primary);" />
+                    <RadzenText TextStyle="TextStyle.H6" Style="margin: 0;">État des notifications</RadzenText>
+                </RadzenStack>
+                
+                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                    <RadzenStack Gap="0.25rem">
+                        <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 600;">
+                            Notifications globales
+                        </RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color);">
+                            @(settings.NotificationsEnabled ? "Activées - Vous recevez toutes les alertes" : "Désactivées - Aucune alerte ne sera envoyée")
+                        </RadzenText>
+                    </RadzenStack>
+                    <RadzenSwitch @bind-Value="@settings.NotificationsEnabled" />
+                </RadzenStack>
+            </RadzenStack>
+        </RadzenCard>
+
+        <!-- Modes d'envoi -->
+        <RadzenCard>
+            <RadzenStack Gap="1rem">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenIcon Icon="send" Style="font-size: 1.5rem; color: var(--rz-primary);" />
+                    <RadzenText TextStyle="TextStyle.H6" Style="margin: 0;">Modes d'envoi</RadzenText>
+                </RadzenStack>
+                
+                <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color);">
+                    Choisissez comment vous souhaitez recevoir les notifications
+                </RadzenText>
+
+                <RadzenRow Gap="1rem">
+                    <RadzenColumn Size="12" SizeSM="6" SizeMD="4">
+                        <RadzenCard Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; height: 100%;">
+                            <RadzenStack Gap="0.75rem">
+                                <RadzenIcon Icon="email" Style="font-size: 2rem;" />
+                                <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 600;">Email</RadzenText>
+                                <RadzenText TextStyle="TextStyle.Caption">
+                                    Recevez les notifications par email
+                                </RadzenText>
+                                <RadzenSwitch @bind-Value="@settings.EmailNotifications" Style="align-self: flex-start;" />
+                            </RadzenStack>
+                        </RadzenCard>
+                    </RadzenColumn>
+
+                    <RadzenColumn Size="12" SizeSM="6" SizeMD="4">
+                        <RadzenCard Style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; height: 100%;">
+                            <RadzenStack Gap="0.75rem">
+                                <RadzenIcon Icon="notifications_active" Style="font-size: 2rem;" />
+                                <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 600;">Push App</RadzenText>
+                                <RadzenText TextStyle="TextStyle.Caption">
+                                    Notifications dans l'application
+                                </RadzenText>
+                                <RadzenSwitch @bind-Value="@settings.PushNotifications" Style="align-self: flex-start;" />
+                            </RadzenStack>
+                        </RadzenCard>
+                    </RadzenColumn>
+
+                    <RadzenColumn Size="12" SizeSM="6" SizeMD="4">
+                        <RadzenCard Style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white; height: 100%;">
+                            <RadzenStack Gap="0.75rem">
+                                <RadzenIcon Icon="sms" Style="font-size: 2rem;" />
+                                <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 600;">SMS</RadzenText>
+                                <RadzenText TextStyle="TextStyle.Caption">
+                                    Recevez les alertes critiques par SMS
+                                </RadzenText>
+                                <RadzenSwitch @bind-Value="@settings.SmsNotifications" Style="align-self: flex-start;" />
+                            </RadzenStack>
+                        </RadzenCard>
+                    </RadzenColumn>
+                </RadzenRow>
+            </RadzenStack>
+        </RadzenCard>
+
+        <!-- Seuils de déclenchement -->
+        <RadzenCard>
+            <RadzenStack Gap="1rem">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenIcon Icon="tune" Style="font-size: 1.5rem; color: var(--rz-primary);" />
+                    <RadzenText TextStyle="TextStyle.H6" Style="margin: 0;">Seuils de déclenchement</RadzenText>
+                </RadzenStack>
+                
+                <RadzenText TextStyle="TextStyle.Body2" Style="color: var(--rz-text-secondary-color);">
+                    Définissez les valeurs qui déclencheront une alerte
+                </RadzenText>
+
+                <RadzenRow Gap="1rem">
+                    <!-- Température -->
+                    <RadzenColumn Size="12" SizeSM="6" SizeMD="4">
+                        <RadzenCard Style="border-left: 4px solid #e74c3c;">
+                            <RadzenStack Gap="0.75rem">
+                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                    <RadzenIcon Icon="thermostat" Style="font-size: 1.5rem; color: #e74c3c;" />
+                                    <RadzenText TextStyle="TextStyle.Subtitle2" Style="font-weight: 600;">Température Max</RadzenText>
+                                </RadzenStack>
+                                <RadzenNumeric @bind-Value="@settings.TemperatureThreshold" 
+                                             TValue="double"
+                                             Min="0"
+                                             Max="50"
+                                             Step="0.5"
+                                             Format="0.0"
+                                             Style="width: 100%;" />
+                                <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-text-secondary-color);">
+                                    Alerte si > @settings.TemperatureThreshold.ToString("F1")°C
+                                </RadzenText>
+                            </RadzenStack>
+                        </RadzenCard>
+                    </RadzenColumn>
+
+                    <!-- Humidité -->
+                    <RadzenColumn Size="12" SizeSM="6" SizeMD="4">
+                        <RadzenCard Style="border-left: 4px solid #3498db;">
+                            <RadzenStack Gap="0.75rem">
+                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                    <RadzenIcon Icon="water_drop" Style="font-size: 1.5rem; color: #3498db;" />
+                                    <RadzenText TextStyle="TextStyle.Subtitle2" Style="font-weight: 600;">Humidité Min</RadzenText>
+                                </RadzenStack>
+                                <RadzenNumeric @bind-Value="@settings.HumidityThreshold" 
+                                             TValue="int"
+                                             Min="0"
+                                             Max="100"
+                                             Step="5"
+                                             Style="width: 100%;" />
+                                <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-text-secondary-color);">
+                                    Alerte si &lt; @settings.HumidityThreshold%
+                                </RadzenText>
+                            </RadzenStack>
+                        </RadzenCard>
+                    </RadzenColumn>
+
+                    <!-- Poussière -->
+                    <RadzenColumn Size="12" SizeSM="6" SizeMD="4">
+                        <RadzenCard Style="border-left: 4px solid #95a5a6;">
+                            <RadzenStack Gap="0.75rem">
+                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                    <RadzenIcon Icon="air" Style="font-size: 1.5rem; color: #95a5a6;" />
+                                    <RadzenText TextStyle="TextStyle.Subtitle2" Style="font-weight: 600;">Poussière Max</RadzenText>
+                                </RadzenStack>
+                                <RadzenNumeric @bind-Value="@settings.DustThreshold" 
+                                             TValue="int"
+                                             Min="0"
+                                             Max="500"
+                                             Step="10"
+                                             Style="width: 100%;" />
+                                <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-text-secondary-color);">
+                                    Alerte si &gt; @settings.DustThreshold
+                                </RadzenText>
+                            </RadzenStack>
+                        </RadzenCard>
+                    </RadzenColumn>
+
+                    <!-- Niveau d'eau -->
+                    <RadzenColumn Size="12" SizeSM="6" SizeMD="4">
+                        <RadzenCard Style="border-left: 4px solid #3498db;">
+                            <RadzenStack Gap="0.75rem">
+                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                    <RadzenIcon Icon="local_drink" Style="font-size: 1.5rem; color: #3498db;" />
+                                    <RadzenText TextStyle="TextStyle.Subtitle2" Style="font-weight: 600;">Eau Min</RadzenText>
+                                </RadzenStack>
+                                <RadzenNumeric @bind-Value="@settings.WaterLevelThreshold" 
+                                             TValue="int"
+                                             Min="0"
+                                             Max="100"
+                                             Step="5"
+                                             Style="width: 100%;" />
+                                <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-text-secondary-color);">
+                                    Alerte si &lt; @settings.WaterLevelThreshold%
+                                </RadzenText>
+                            </RadzenStack>
+                        </RadzenCard>
+                    </RadzenColumn>
+
+                    <!-- Niveau de nourriture -->
+                    <RadzenColumn Size="12" SizeSM="6" SizeMD="4">
+                        <RadzenCard Style="border-left: 4px solid #f39c12;">
+                            <RadzenStack Gap="0.75rem">
+                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                    <RadzenIcon Icon="restaurant" Style="font-size: 1.5rem; color: #f39c12;" />
+                                    <RadzenText TextStyle="TextStyle.Subtitle2" Style="font-weight: 600;">Aliment Min</RadzenText>
+                                </RadzenStack>
+                                <RadzenNumeric @bind-Value="@settings.FoodLevelThreshold" 
+                                             TValue="int"
+                                             Min="0"
+                                             Max="100"
+                                             Step="5"
+                                             Style="width: 100%;" />
+                                <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-text-secondary-color);">
+                                    Alerte si &lt; @settings.FoodLevelThreshold%
+                                </RadzenText>
+                            </RadzenStack>
+                        </RadzenCard>
+                    </RadzenColumn>
+
+                    <!-- Intervalle de vérification -->
+                    <RadzenColumn Size="12" SizeSM="6" SizeMD="4">
+                        <RadzenCard Style="border-left: 4px solid #9b59b6;">
+                            <RadzenStack Gap="0.75rem">
+                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                    <RadzenIcon Icon="schedule" Style="font-size: 1.5rem; color: #9b59b6;" />
+                                    <RadzenText TextStyle="TextStyle.Subtitle2" Style="font-weight: 600;">Intervalle</RadzenText>
+                                </RadzenStack>
+                                <RadzenNumeric @bind-Value="@settings.CheckInterval" 
+                                             TValue="int"
+                                             Min="1"
+                                             Max="60"
+                                             Step="1"
+                                             Style="width: 100%;" />
+                                <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-text-secondary-color);">
+                                    Vérification toutes les @settings.CheckInterval min
+                                </RadzenText>
+                            </RadzenStack>
+                        </RadzenCard>
+                    </RadzenColumn>
+                </RadzenRow>
+            </RadzenStack>
+        </RadzenCard>
+
+        <!-- Boutons d'action -->
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="1rem" Wrap="FlexWrap.Wrap">
+                <RadzenButton Click="ResetToDefaults" 
+                            Text="Réinitialiser" 
+                            ButtonStyle="ButtonStyle.Light"
+                            Icon="restart_alt"
+                            Size="ButtonSize.Medium"
+                            Disabled="@isSaving" />
+                <RadzenButton Click="SaveSettings" 
+                            Text="@(isSaving ? "Sauvegarde..." : "Sauvegarder")" 
+                            ButtonStyle="ButtonStyle.Primary"
+                            Icon="save"
+                            Size="ButtonSize.Medium"
+                            Disabled="@isSaving" />
+            </RadzenStack>
+        </RadzenCard>
+
+        <!-- Info dernière modification -->
+        @if (settings.LastUpdated != default)
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Size="AlertSize.Small">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenIcon Icon="info" />
+                    <RadzenText TextStyle="TextStyle.Caption">
+                        Dernière modification: @settings.LastUpdated.ToString("dd/MM/yyyy à HH:mm")
+                    </RadzenText>
+                </RadzenStack>
+            </RadzenAlert>
+        }
+    }
+</RadzenStack>
+
+@code {
+    private NotificationSettingsDto settings = new();
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private string currentUserId = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            currentUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
+        }
+
+        await LoadSettings();
+    }
+
+    private void NavigateBack()
+    {
+        Navigation.NavigateTo("/notifications");
+    }
+
+    private async Task LoadSettings()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var serverSettings = await NotificationService.GetNotificationSettingsAsync(currentUserId);
+
+            if (serverSettings != null)
+            {
+                settings = serverSettings;
+            }
+            else
+            {
+                // Paramètres par défaut
+                settings = new NotificationSettingsDto
+                {
+                    UserId = currentUserId,
+                    NotificationsEnabled = true,
+                    EmailNotifications = true,
+                    PushNotifications = true,
+                    SmsNotifications = false,
+                    TemperatureThreshold = 35.0,
+                    HumidityThreshold = 40,
+                    DustThreshold = 100,
+                    WaterLevelThreshold = 30,
+                    FoodLevelThreshold = 25,
+                    CheckInterval = 5
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.Notify(new NotificationMessage 
+            { 
+                Severity = NotificationSeverity.Error, 
+                Summary = "Erreur", 
+                Detail = $"Impossible de charger les paramètres: {ex.Message}", 
+                Duration = 5000 
+            });
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            settings.UserId = currentUserId;
+            settings.LastUpdated = DateTime.UtcNow;
+
+            var savedSettings = await NotificationService.SaveNotificationSettingsAsync(settings);
+
+            if (savedSettings != null)
+            {
+                settings = savedSettings;
+                
+                ToastService.Notify(new NotificationMessage 
+                { 
+                    Severity = NotificationSeverity.Success, 
+                    Summary = "Paramètres sauvegardés", 
+                    Detail = "Vos préférences ont été enregistrées avec succès", 
+                    Duration = 4000 
+                });
+            }
+            else
+            {
+                ToastService.Notify(new NotificationMessage 
+                { 
+                    Severity = NotificationSeverity.Error, 
+                    Summary = "Erreur", 
+                    Detail = "Impossible de sauvegarder les paramètres", 
+                    Duration = 5000 
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            ToastService.Notify(new NotificationMessage 
+            { 
+                Severity = NotificationSeverity.Error, 
+                Summary = "Erreur", 
+                Detail = $"Erreur lors de la sauvegarde: {ex.Message}", 
+                Duration = 5000 
+            });
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ResetToDefaults()
+    {
+        settings = new NotificationSettingsDto
+        {
+            UserId = currentUserId,
+            NotificationsEnabled = true,
+            EmailNotifications = true,
+            PushNotifications = true,
+            SmsNotifications = false,
+            TemperatureThreshold = 35.0,
+            HumidityThreshold = 40,
+            DustThreshold = 100,
+            WaterLevelThreshold = 30,
+            FoodLevelThreshold = 25,
+            CheckInterval = 5,
+            LastUpdated = settings.LastUpdated
+        };
+
+        ToastService.Notify(new NotificationMessage 
+        { 
+            Severity = NotificationSeverity.Info, 
+            Summary = "Valeurs par défaut restaurées", 
+            Detail = "N'oubliez pas de sauvegarder les modifications", 
+            Duration = 4000 
+        });
+
+        StateHasChanged();
+    }
+}

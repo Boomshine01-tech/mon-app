@@ -1,0 +1,218 @@
+package com.example.listreorder;
+
+import android.view.MotionEvent;
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.ListView;
+import com.google.appinventor.components.annotations.*;
+import com.google.appinventor.components.common.ComponentCategory;
+import com.google.appinventor.components.runtime.*;
+import com.google.appinventor.components.runtime.util.YailList;
+import java.util.ArrayList;
+import java.util.Collections;
+
+@DesignerComponent(
+    version = 1,
+    description = "Extension permettant de réorganiser les éléments d'une ListView par glisser-déposer",
+    category = ComponentCategory.EXTENSION,
+    nonVisible = true,
+    iconName = "images/extension.png"
+)
+@SimpleObject(external = true)
+public class ListViewReorder extends AndroidNonvisibleComponent {
+    
+    private ListView listView;
+    private ArrayAdapter<String> adapter;
+    private ArrayList<String> items;
+    private int draggedPosition = -1;
+    private int targetPosition = -1;
+    private boolean isDragging = false;
+    
+    public ListViewReorder(ComponentContainer container) {
+        super(container.$form());
+    }
+    
+    /**
+     * Active le mode réorganisation pour une ListView
+     */
+    @SimpleFunction(description = "Active le mode de réorganisation pour une ListView. Passez la ListView en paramètre.")
+    public void EnableReordering(AndroidViewComponent listViewComponent) {
+        View view = listViewComponent.getView();
+        
+        if (!(view instanceof ListView)) {
+            form.dispatchErrorOccurredEvent(this, "EnableReordering",
+                ErrorMessages.ERROR_EXTENSION_ERROR, "Le composant doit être une ListView");
+            return;
+        }
+        
+        listView = (ListView) view;
+        items = new ArrayList<>();
+        
+        // Récupérer les éléments actuels de la ListView
+        if (listView.getAdapter() != null) {
+            for (int i = 0; i < listView.getAdapter().getCount(); i++) {
+                items.add(listView.getAdapter().getItem(i).toString());
+            }
+        }
+        
+        // Créer un nouvel adaptateur
+        adapter = new ArrayAdapter<>(form, android.R.layout.simple_list_item_1, items);
+        listView.setAdapter(adapter);
+        
+        // Configurer le glisser-déposer
+        setupDragAndDrop();
+    }
+    
+    /**
+     * Définit les éléments de la liste
+     */
+    @SimpleFunction(description = "Définit les éléments de la liste à afficher")
+    public void SetListItems(YailList itemsList) {
+        if (listView == null) {
+            form.dispatchErrorOccurredEvent(this, "SetListItems",
+                ErrorMessages.ERROR_EXTENSION_ERROR, "Activez d'abord le mode réorganisation avec EnableReordering");
+            return;
+        }
+        
+        items.clear();
+        for (Object item : itemsList.toArray()) {
+            if (item != null) {
+                items.add(item.toString());
+            }
+        }
+        
+        adapter.notifyDataSetChanged();
+    }
+    
+    /**
+     * Déplace un élément d'une position à une autre
+     */
+    @SimpleFunction(description = "Déplace un élément de la position 'fromIndex' vers la position 'toIndex'")
+    public void MoveItem(int fromIndex, int toIndex) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        
+        // Ajuster les indices (MIT App Inventor utilise l'indexation à partir de 1)
+        fromIndex = fromIndex - 1;
+        toIndex = toIndex - 1;
+        
+        if (fromIndex < 0 || fromIndex >= items.size() || 
+            toIndex < 0 || toIndex >= items.size()) {
+            form.dispatchErrorOccurredEvent(this, "MoveItem",
+                ErrorMessages.ERROR_EXTENSION_ERROR, "Index hors limites");
+            return;
+        }
+        
+        String item = items.remove(fromIndex);
+        items.add(toIndex, item);
+        
+        if (adapter != null) {
+            adapter.notifyDataSetChanged();
+        }
+        
+        // Déclencher l'événement de changement d'ordre
+        OrderChanged(GetCurrentOrder());
+    }
+    
+    /**
+     * Retourne l'ordre actuel des éléments
+     */
+    @SimpleFunction(description = "Retourne la liste actuelle des éléments dans leur ordre")
+    public YailList GetCurrentOrder() {
+        if (items == null) {
+            return YailList.makeEmptyList();
+        }
+        return YailList.makeList(items);
+    }
+    
+    /**
+     * Échange deux éléments
+     */
+    @SimpleFunction(description = "Échange les éléments aux positions index1 et index2")
+    public void SwapItems(int index1, int index2) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        
+        // Ajuster les indices
+        index1 = index1 - 1;
+        index2 = index2 - 1;
+        
+        if (index1 < 0 || index1 >= items.size() || 
+            index2 < 0 || index2 >= items.size()) {
+            return;
+        }
+        
+        Collections.swap(items, index1, index2);
+        
+        if (adapter != null) {
+            adapter.notifyDataSetChanged();
+        }
+        
+        OrderChanged(GetCurrentOrder());
+    }
+    
+    /**
+     * Événement déclenché quand l'ordre change
+     */
+    @SimpleEvent(description = "Déclenché quand l'ordre des éléments change")
+    public void OrderChanged(YailList newOrder) {
+        EventDispatcher.dispatchEvent(this, "OrderChanged", newOrder);
+    }
+    
+    /**
+     * Événement déclenché lors du début du glissement
+     */
+    @SimpleEvent(description = "Déclenché quand l'utilisateur commence à glisser un élément")
+    public void DragStarted(int position, String item) {
+        EventDispatcher.dispatchEvent(this, "DragStarted", position, item);
+    }
+    
+    /**
+     * Événement déclenché lors du dépôt
+     */
+    @SimpleEvent(description = "Déclenché quand l'utilisateur dépose un élément")
+    public void DragEnded(int fromPosition, int toPosition) {
+        EventDispatcher.dispatchEvent(this, "DragEnded", fromPosition, toPosition);
+    }
+    
+    /**
+     * Configure le système de glisser-déposer
+     */
+    private void setupDragAndDrop() {
+        listView.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
+            @Override
+            public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
+                draggedPosition = position;
+                isDragging = true;
+                DragStarted(position + 1, items.get(position)); // +1 pour l'indexation App Inventor
+                return true;
+            }
+        });
+        
+        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                if (isDragging && draggedPosition != -1 && draggedPosition != position) {
+                    targetPosition = position;
+                    
+                    // Déplacer l'élément
+                    String item = items.remove(draggedPosition);
+                    items.add(targetPosition, item);
+                    adapter.notifyDataSetChanged();
+                    
+                    // Déclencher les événements
+                    DragEnded(draggedPosition + 1, targetPosition + 1);
+                    OrderChanged(GetCurrentOrder());
+                    
+                    // Réinitialiser
+                    draggedPosition = -1;
+                    targetPosition = -1;
+                    isDragging = false;
+                }
+            }
+        });
+    }
+}

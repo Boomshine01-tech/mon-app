@@ -1,0 +1,10 @@
+@page "/account"
+@inject NavigationManager NavigationManager
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Rediriger vers la page d'accueil
+        NavigationManager.NavigateTo("/", true);
+    }
+}

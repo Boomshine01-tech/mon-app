@@ -1,0 +1,468 @@
+@page "/sensordata"
+
+@attribute [Authorize]
+@using SmartNest.Server.Models.postgres
+@using SmartNest.Client.Services
+@inject MqttConnectionService MqttService
+@inject ILogger<MainLayout> Logger
+@inject SmartNest.Client.postgresService SensorDataService
+@inject Microsoft.Extensions.Localization.IStringLocalizer<Sensordata> L
+
+
+<PageTitle>Données des Capteurs</PageTitle>
+
+<RadzenStack Gap="20px">
+    <RadzenCard>
+        <div class="row">
+            <div class="col-12">
+                <RadzenText Style="font-size: 24px; font-weight: bold; color: #2c3e50;" Text="Tableau des Données des Capteurs" />
+                <RadzenText Style="color: #7f8c8d; margin-bottom: 20px;" Text="Visualisez en temps réel les données de température, humidité et poussière" />
+            </div>
+        </div>
+    </RadzenCard>
+
+    <!-- Cartes de statistiques -->
+    <RadzenCard>
+        <div class="row text-center">
+            <div class="col-md-4">
+                <RadzenCard Style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none;">
+                    <div class="p-3">
+                        <RadzenIcon Icon="thermometer" Style="font-size: 2rem; margin-bottom: 10px;" />
+                        <h5>Température Moyenne</h5>
+                        <h3>@averageTemperature.ToString("F1")°C</h3>
+                        <RadzenText Size="TextSize.Small" Style="opacity: 0.8;">
+                            @GetTemperatureStatus(averageTemperature)
+                        </RadzenText>
+                    </div>
+                </RadzenCard>
+            </div>
+            <div class="col-md-4">
+                <RadzenCard Style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; border: none;">
+                    <div class="p-3">
+                        <RadzenIcon Icon="water" Style="font-size: 2rem; margin-bottom: 10px;" />
+                        <h5>Humidité Moyenne</h5>
+                        <h3>@averageHumidity.ToString("F1")%</h3>
+                        <RadzenText Size="TextSize.Small" Style="opacity: 0.8;">
+                            @GetHumidityStatus(averageHumidity)
+                        </RadzenText>
+                    </div>
+                </RadzenCard>
+            </div>
+            <div class="col-md-4">
+                <RadzenCard Style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; border: none;">
+                    <div class="p-3">
+                        <RadzenIcon Icon="cloud" Style="font-size: 2rem; margin-bottom: 10px;" />
+                        <h5>Poussière Moyenne</h5>
+                        <h3>@averageDust.ToString("F1") µg/m³</h3>
+                        <RadzenText Size="TextSize.Small" Style="opacity: 0.8;">
+                            @GetDustStatus(averageDust)
+                        </RadzenText>
+                    </div>
+                </RadzenCard>
+            </div>
+        </div>
+    </RadzenCard>
+
+    <!-- Barre d'outils -->
+    <RadzenCard>
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <RadzenButton Icon="refresh" Click="ReloadData" ButtonStyle="ButtonStyle.Secondary" Text="Actualiser" />
+                <RadzenButton Icon="download"
+                              Click="@(() => ExportToExcel())"
+                              ButtonStyle="ButtonStyle.Success"
+                              Text="Exporter"
+                              Style="margin-left: 10px;" />
+            </div>
+            <div class="col-md-6 text-end">
+                <RadzenText Style="color: #7f8c8d;">
+                    Total: @(sensorData?.Count() ?? 0) enregistrements
+                </RadzenText>
+            </div>
+        </div>
+    </RadzenCard>
+
+    <!-- Tableau des données -->
+    <RadzenCard>
+        <RadzenDataGrid @ref="grid" TItem="Sensordatum" Data="@sensorData" 
+                        AllowFiltering="true" AllowSorting="true" AllowPaging="true"
+                        PageSize="10"
+                        PageSizeOptions="@(new int[] {5, 10, 20, 50})"
+                        ColumnWidth="200px"
+                        Style="margin-bottom: 20px;"
+                        EmptyText="Aucune donnée de capteur disponible">
+            
+            <Columns>
+                <!-- Horodatage -->
+                <RadzenDataGridColumn TItem="Sensordatum" Property="Timestamp" Title="Date et Heure" 
+                                     Width="180px">
+                    <Template Context="data">
+                        <RadzenText>
+                            @data.timestamp.ToString("dd/MM/yyyy HH:mm:ss")
+                        </RadzenText>
+                    </Template>
+                </RadzenDataGridColumn>
+                
+                <!-- Température -->
+                <RadzenDataGridColumn TItem="Sensordatum" Property="Temperature" Title="Température (°C)" 
+                                     Width="160px" Filterable="true" Sortable="true">
+                    <Template Context="data">
+                        <div class="sensor-value @GetTemperatureClass(data.temperature)">
+                            <RadzenIcon Icon="thermometer" Style="margin-right: 5px;" />
+                            @data.temperature.ToString("F1")°C
+                        </div>
+                    </Template>
+                </RadzenDataGridColumn>
+                
+                <!-- Humidité -->
+                <RadzenDataGridColumn TItem="Sensordatum" Property="Humidity" Title="Humidité (%)" 
+                                     Width="160px" Filterable="true" Sortable="true">
+                    <Template Context="data">
+                        <div class="sensor-value @GetHumidityClass(data.humidity)">
+                            <RadzenIcon Icon="water" Style="margin-right: 5px;" />
+                            @data.humidity.ToString("F1")%
+                        </div>
+                    </Template>
+                </RadzenDataGridColumn>
+                
+                <!-- Poussière -->
+                <RadzenDataGridColumn TItem="Sensordatum" Property="Dust" Title="Poussière (µg/m³)" 
+                                     Width="160px" Filterable="true" Sortable="true">
+                    <Template Context="data">
+                        <div class="sensor-value @GetDustClass(data.dust)">
+                            <RadzenIcon Icon="cloud" Style="margin-right: 5px;" />
+                            @data.dust.ToString("F1") µg/m³
+                        </div>
+                    </Template>
+                </RadzenDataGridColumn>
+                
+                <!-- Actions -->
+                <RadzenDataGridColumn TItem="Sensordatum" Title="Actions" Width="120px" 
+                                     Filterable="false" Sortable="false">
+                    <Template Context="data">
+                        <RadzenButton Icon="delete" Click="@(args => DeleteSensorData(data))" 
+                                    ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small"
+                                    Title="Supprimer cet enregistrement" />
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+            
+        </RadzenDataGrid>
+    </RadzenCard>
+
+    <!-- Section d'information -->
+    <RadzenCard>
+        <div class="row">
+            <div class="col-12">
+                <RadzenText Style="font-size: 16px; font-weight: bold; color: #2c3e50;" Text="Légende des couleurs" />
+                <div class="row mt-2">
+                    <div class="col-auto">
+                        <span class="color-indicator temperature-high"></span>
+                        <RadzenText Size="TextSize.Small">Température élevée (sup 30°C)</RadzenText>
+                    </div>
+                    <div class="col-auto">
+                        <span class="color-indicator temperature-normal"></span>
+                        <RadzenText Size="TextSize.Small">Température normale (15-30°C)</RadzenText>
+                    </div>
+                    <div class="col-auto">
+                        <span class="color-indicator temperature-low"></span>
+                        <RadzenText Size="TextSize.Small">Température basse (inf 15°C)</RadzenText>
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-auto">
+                        <span class="color-indicator humidity-high"></span>
+                        <RadzenText Size="TextSize.Small">Humidité élevée (sup 80%)</RadzenText>
+                    </div>
+                    <div class="col-auto">
+                        <span class="color-indicator humidity-normal"></span>
+                        <RadzenText Size="TextSize.Small">Humidité normale (30-80%)</RadzenText>
+                    </div>
+                    <div class="col-auto">
+                        <span class="color-indicator humidity-low"></span>
+                        <RadzenText Size="TextSize.Small">Humidité basse (inf 30%)</RadzenText>
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-auto">
+                        <span class="color-indicator dust-high"></span>
+                        <RadzenText Size="TextSize.Small">Poussière élevée (sup 50 µg/m³)</RadzenText>
+                    </div>
+                    <div class="col-auto">
+                        <span class="color-indicator dust-normal"></span>
+                        <RadzenText Size="TextSize.Small">Poussière normale (20-50 µg/m³)</RadzenText>
+                    </div>
+                    <div class="col-auto">
+                        <span class="color-indicator dust-low"></span>
+                        <RadzenText Size="TextSize.Small">Poussière basse (inf 20 µg/m³)</RadzenText>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </RadzenCard>
+</RadzenStack>
+
+<style>
+    .sensor-value {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+    }
+
+    /* Classes pour la température */
+    .temperature-high {
+        background-color: #ffebee;
+        color: #c62828;
+        border-left: 3px solid #c62828;
+    }
+
+    .temperature-normal {
+        background-color: #e8f5e8;
+        color: #2e7d32;
+        border-left: 3px solid #2e7d32;
+    }
+
+    .temperature-low {
+        background-color: #e3f2fd;
+        color: #1565c0;
+        border-left: 3px solid #1565c0;
+    }
+
+    /* Classes pour l'humidité */
+    .humidity-high {
+        background-color: #e3f2fd;
+        color: #1565c0;
+        border-left: 3px solid #1565c0;
+    }
+
+    .humidity-normal {
+        background-color: #e8f5e8;
+        color: #2e7d32;
+        border-left: 3px solid #2e7d32;
+    }
+
+    .humidity-low {
+        background-color: #fff3e0;
+        color: #ef6c00;
+        border-left: 3px solid #ef6c00;
+    }
+
+    /* Classes pour la poussière */
+    .dust-high {
+        background-color: #ffebee;
+        color: #c62828;
+        border-left: 3px solid #c62828;
+    }
+
+    .dust-normal {
+        background-color: #fff3e0;
+        color: #ef6c00;
+        border-left: 3px solid #ef6c00;
+    }
+
+    .dust-low {
+        background-color: #e8f5e8;
+        color: #2e7d32;
+        border-left: 3px solid #2e7d32;
+    }
+
+    /* Indicateurs de couleur pour la légende */
+    .color-indicator {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border-radius: 3px;
+        margin-right: 8px;
+        vertical-align: middle;
+    }
+
+    .color-indicator.temperature-high { background-color: #c62828; }
+    .color-indicator.temperature-normal { background-color: #2e7d32; }
+    .color-indicator.temperature-low { background-color: #1565c0; }
+    .color-indicator.humidity-high { background-color: #1565c0; }
+    .color-indicator.humidity-normal { background-color: #2e7d32; }
+    .color-indicator.humidity-low { background-color: #ef6c00; }
+    .color-indicator.dust-high { background-color: #c62828; }
+    .color-indicator.dust-normal { background-color: #ef6c00; }
+    .color-indicator.dust-low { background-color: #2e7d32; }
+
+    /* Responsive */
+    @@media (max-width: 768px) {
+        .sensor-value {
+            font-size: 0.875rem;
+        }
+    }
+</style>
+
+@code {
+    private IEnumerable<Sensordatum> sensorData = new List<Sensordatum>();
+    private RadzenDataGrid<Sensordatum> grid = default!;
+    private double averageTemperature;
+    private double averageHumidity;
+    private double averageDust;
+    private bool isLoading = true;
+
+    [Inject]
+    private Radzen.NotificationService RadNotificationService { get; set; } = default!;
+
+    [Inject] 
+    private Radzen.DialogService RadDialogService { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+                   // Initialiser la connexion MQTT au démarrage
+            var success = await MqttService.InitializeSessionAsync();
+        
+            if (success)
+            {
+                Logger.LogInformation("MQTT session initialized successfully");
+            }
+            else
+            {
+                Logger.LogWarning("MQTT session initialization failed");
+            }
+
+        await LoadData();
+        await CalculateAverages();
+        isLoading = false;
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            sensorData = await SensorDataService.GetSensorData();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+             RadNotificationService.Notify(NotificationSeverity.Error, "Erreur", "Impossible de charger les données des capteurs");
+        }
+    }
+
+    private async Task CalculateAverages()
+    {
+        if (sensorData != null && sensorData.Any())
+        {
+            averageTemperature = await SensorDataService.GetAverageTemperature();
+            averageHumidity = await SensorDataService.GetAverageHumidity();
+            averageDust = await SensorDataService.GetAverageDust();
+        }
+        else
+        {
+            averageTemperature = 0;
+            averageHumidity = 0;
+            averageDust = 0;
+        }
+    }
+
+    private string GetTemperatureClass(double temperature)
+    {
+        return temperature switch
+        {
+            > 30 => "temperature-high",
+            < 15 => "temperature-low",
+            _ => "temperature-normal"
+        };
+    }
+
+    private string GetHumidityClass(double humidity)
+    {
+        return humidity switch
+        {
+            > 80 => "humidity-high",
+            < 30 => "humidity-low",
+            _ => "humidity-normal"
+        };
+    }
+
+    private string GetDustClass(double dust)
+    {
+        return dust switch
+        {
+            > 50 => "dust-high",
+            < 20 => "dust-low",
+            _ => "dust-normal"
+        };
+    }
+
+    private string GetTemperatureStatus(double temperature)
+    {
+        return temperature switch
+        {
+            > 30 => "Élevée",
+            < 15 => "Basse",
+            _ => "Normale"
+        };
+    }
+
+    private string GetHumidityStatus(double humidity)
+    {
+        return humidity switch
+        {
+            > 80 => "Élevée",
+            < 30 => "Basse",
+            _ => "Normale"
+        };
+    }
+
+    private string GetDustStatus(double dust)
+    {
+        return dust switch
+        {
+            > 50 => "Élevée",
+            < 20 => "Basse",
+            _ => "Normale"
+        };
+    }
+
+    private async Task DeleteSensorData(Sensordatum data)
+    {
+        try
+        {
+            var result = await RadDialogService.Confirm("Êtes-vous sûr de vouloir supprimer cet enregistrement ?", "Confirmation de suppression",
+                new ConfirmOptions() { OkButtonText = "Oui", CancelButtonText = "Non" });
+
+            if (result == true)
+            {
+                await SensorDataService.DeleteSensorData(data.id);
+                await LoadData();
+                await CalculateAverages();
+                RadNotificationService.Notify(NotificationSeverity.Success, "Succès", "Enregistrement supprimé avec succès");
+            }
+        }
+        catch (Exception ex)
+        {
+            RadNotificationService.Notify(NotificationSeverity.Error, "Erreur", "Impossible de supprimer l'enregistrement");
+        }
+    }
+
+    private async Task ReloadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+        
+        await LoadData();
+        await CalculateAverages();
+        
+        isLoading = false;
+        StateHasChanged();
+        
+        RadNotificationService.Notify(NotificationSeverity.Info, "Actualisation", "Données actualisées avec succès");
+    }
+
+    private async Task ExportToExcel()
+    {
+        try
+        {
+            await SensorDataService.ExportSensordataToExcel(fileName: $"Donnees_Capteurs_{DateTime.Now:yyyyMMdd_HHmmss}");
+            RadNotificationService.Notify(NotificationSeverity.Success, "Export", "Export Excel lancé avec succès");
+        }
+        catch (Exception ex)
+        {
+            RadNotificationService.Notify(NotificationSeverity.Error, "Erreur", "Impossible d'exporter les données");
+        }
+    }
+}

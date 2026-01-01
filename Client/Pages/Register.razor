@@ -1,0 +1,199 @@
+@page "/register"
+@inject NavigationManager NavigationManager
+@inject SmartNest.Client.Services.AuthService AuthService
+@inject Radzen.NotificationService NotificationService
+@layout LoginLayout
+
+<PageTitle>Register</PageTitle>
+<RadzenText Text="Create Account" TextStyle="Radzen.Blazor.TextStyle.H5" class="mb-4" TagName="Radzen.Blazor.TagName.H2" />
+
+<RadzenRow>
+    <RadzenColumn SizeMD="12">
+        <RadzenTemplateForm Data="@model" Submit="@OnSubmit" TItem="RegisterModel">
+            <RadzenAlert Shade="Shade.Lighter" Variant="Variant.Flat" Size="AlertSize.Small" 
+                AlertStyle="AlertStyle.Danger" Visible="@errorVisible">@error</RadzenAlert>
+
+            <RadzenStack Gap="1rem">
+                <RadzenFormField Text="Email" Variant="Variant.Flat">
+                    <ChildContent>
+                        <RadzenTextBox @bind-Value="@model.Email" 
+                                       style="display: block; width: 100%" 
+                                       Name="Email" 
+                                       Placeholder="Enter your email"
+                                       autocomplete="email" />
+                    </ChildContent>
+                    <Helper>
+                        <RadzenRequiredValidator Component="Email" Text="Email is required" />
+                        <RadzenEmailValidator Component="Email" Text="Provide a valid email address" />
+                    </Helper>
+                </RadzenFormField>
+
+                <RadzenFormField Text="Password" Variant="Variant.Flat">
+                    <ChildContent>
+                        <RadzenPassword @bind-Value="@model.Password" 
+                                        style="display: block; width: 100%" 
+                                        Name="Password" 
+                                        Placeholder="Enter your password"
+                                        autocomplete="new-password" />
+                    </ChildContent>
+                    <Helper>
+                        <RadzenRequiredValidator Component="Password" Text="Password is required" />
+                        <RadzenLengthValidator Component="Password" Min="6" Text="Password must be at least 6 characters" />
+                    </Helper>
+                </RadzenFormField>
+
+                <RadzenFormField Text="Confirm Password" Variant="Variant.Flat">
+                    <ChildContent>
+                        <RadzenPassword @bind-Value="@model.ConfirmPassword" 
+                                        style="display: block; width: 100%" 
+                                        Name="ConfirmPassword" 
+                                        Placeholder="Confirm your password"
+                                        autocomplete="new-password" />
+                    </ChildContent>
+                    <Helper>
+                        <RadzenRequiredValidator Component="ConfirmPassword" Text="Confirm password is required" />
+                        <RadzenCompareValidator Component="ConfirmPassword" Value="@model.Password" Text="Passwords must match" />
+                    </Helper>
+                </RadzenFormField>
+            </RadzenStack>
+
+            <RadzenStack Orientation="Orientation.Horizontal" Gap="1rem" class="rz-mt-6" JustifyContent="JustifyContent.SpaceBetween">
+                <RadzenButton ButtonType="ButtonType.Submit" 
+                              Text="Create Account" 
+                              IsBusy="@isBusy"
+                              BusyText="Creating account..."
+                              Variant="Variant.Flat" 
+                              ButtonStyle="ButtonStyle.Primary" 
+                              Style="width: 100%;" />
+            </RadzenStack>
+
+            <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" class="rz-mt-4" JustifyContent="JustifyContent.Center">
+                <RadzenText TextStyle="TextStyle.Body2">Already have an account?</RadzenText>
+                <RadzenLink Path="@($"/login?redirectUrl={Uri.EscapeDataString(redirectUrl)}")" Text="Sign in" />
+            </RadzenStack>
+        </RadzenTemplateForm>
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    private RegisterModel model = new();
+    private string redirectUrl = "/";
+    private bool errorVisible;
+    private string error = string.Empty;
+    private bool isBusy;
+
+    protected override void OnInitialized()
+    {
+        Console.WriteLine("🎬 Register.razor - OnInitialized");
+        var uri = new Uri(NavigationManager.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        redirectUrl = query["redirectUrl"] ?? "/";
+        Console.WriteLine($"🔀 Redirect URL: {redirectUrl}");
+        Console.WriteLine($"✅ AuthService injected: {AuthService != null}");
+    }
+
+    private async Task OnSubmit(RegisterModel formModel)
+    {
+        Console.WriteLine("");
+        Console.WriteLine("╔" + "═".PadRight(70, '═') + "╗");
+        Console.WriteLine("║  🚀 REGISTER FORM SUBMISSION                                      ║");
+        Console.WriteLine("╚" + "═".PadRight(70, '═') + "╝");
+        
+        try
+        {
+            Console.WriteLine("📋 STEP 1: Validation des données du formulaire");
+            Console.WriteLine($"   - Email: {model.Email}");
+            Console.WriteLine($"   - Password: {new string('*', model.Password?.Length ?? 0)} (length: {model.Password?.Length ?? 0})");
+            Console.WriteLine($"   - Confirm Password: {new string('*', model.ConfirmPassword?.Length ?? 0)} (length: {model.ConfirmPassword?.Length ?? 0})");
+            Console.WriteLine($"   - Passwords match: {model.Password == model.ConfirmPassword}");
+            
+            Console.WriteLine("");
+            Console.WriteLine("📋 STEP 2: Setting isBusy = true");
+            isBusy = true;
+            errorVisible = false;
+
+            Console.WriteLine("");
+            Console.WriteLine("📋 STEP 3: Calling AuthService.RegisterAsync");
+            Console.WriteLine($"   - AuthService is null: {AuthService == null}");
+            
+            if (AuthService == null)
+            {
+                Console.WriteLine("❌❌❌ CRITICAL: AuthService is NULL! ❌❌❌");
+                error = "Service d'authentification non disponible";
+                errorVisible = true;
+                return;
+            }
+            if(model.Password!=null)
+            {
+                var result = await AuthService.RegisterAsync(model.Email, model.Password);
+                Console.WriteLine("");
+                Console.WriteLine("📋 STEP 4: Processing AuthService response");
+                Console.WriteLine($"   - Result is null: {result == null}");
+                Console.WriteLine($"   - Result.IsSuccess: {result?.IsSuccess}");
+                Console.WriteLine($"   - Result.ErrorMessage: {result?.ErrorMessage}");
+
+                if (result!.IsSuccess)
+                {
+                    Console.WriteLine("");
+                    Console.WriteLine("✅ STEP 5: Registration SUCCESS!");
+                
+                    NotificationService.Notify(new NotificationMessage
+                    {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Success",
+                    Detail = "Account created successfully!",
+                    Duration = 4000
+                    });
+
+                    Console.WriteLine("⏳ Waiting 1 second before redirect...");
+                    await Task.Delay(1000);
+                
+                    var loginUrl = $"/login?info=Registration successful. You can now log in.";
+                    Console.WriteLine($"🔀 Navigating to: {loginUrl}");
+                    NavigationManager.NavigateTo(loginUrl);
+                }
+                else
+                {
+                    Console.WriteLine("");
+                    Console.WriteLine("❌ STEP 5: Registration FAILED");
+                    error = result.ErrorMessage;
+                    errorVisible = true;
+                    Console.WriteLine($"   - Error displayed to user: {error}");
+                }
+            }
+
+            
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("");
+            Console.WriteLine("❌❌❌ EXCEPTION CAUGHT IN OnSubmit ❌❌❌");
+            Console.WriteLine($"   - Exception Type: {ex.GetType().Name}");
+            Console.WriteLine($"   - Message: {ex.Message}");
+            Console.WriteLine($"   - StackTrace: {ex.StackTrace}");
+            Console.WriteLine($"   - InnerException: {ex.InnerException?.Message}");
+            
+            errorVisible = true;
+            error = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            Console.WriteLine("");
+            Console.WriteLine("📋 STEP 6: Finally block - Setting isBusy = false");
+            isBusy = false;
+            StateHasChanged();
+            Console.WriteLine("🔄 StateHasChanged called");
+            Console.WriteLine("╔" + "═".PadRight(70, '═') + "╗");
+            Console.WriteLine("║  ✅ REGISTER FORM SUBMISSION - END                                ║");
+            Console.WriteLine("╚" + "═".PadRight(70, '═') + "╝");
+            Console.WriteLine("");
+        }
+    }
+
+    public class RegisterModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

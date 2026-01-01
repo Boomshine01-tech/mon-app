@@ -1,0 +1,35 @@
+# Exclure les dossiers de build et binaires
+**/bin/
+**/obj/
+**/out/
+**/publish/
+
+# Exclure les fichiers de configuration locaux
+**/.vs/
+**/.vscode/
+**/.idea/
+*.user
+*.suo
+
+# Exclure les dépendances Node.js (si vous en avez)
+**/node_modules/
+**/npm-debug.log
+
+# Exclure Git
+.git/
+.gitignore
+.gitattributes
+
+# Exclure Docker
+**/.dockerignore
+**/Dockerfile*
+**/docker-compose*
+
+# Exclure les fichiers de documentation
+README.md
+LICENSE
+**/*.md
+
+# Exclure les fichiers de test
+**/TestResults/
+**/*Tests/

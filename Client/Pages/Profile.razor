@@ -1,0 +1,201 @@
+@page "/profile"
+@attribute [Authorize]
+@using SmartNest.Client.Services
+@using System.Net.Http.Json
+@inject Microsoft.Extensions.Localization.IStringLocalizer<Profile> L
+@inject ProfileService ProfileService
+@inject NavigationManager NavigationManager
+@inject NotificationService NotificationService
+
+<PageTitle>Profile</PageTitle>
+<RadzenStack>
+    <RadzenRow AlignItems="AlignItems.Center">
+        <RadzenColumn Size="12">
+            <RadzenText Text="My Profile" TextStyle="TextStyle.H3" TagName="TagName.H1" style="margin: 0" />
+        </RadzenColumn>
+    </RadzenRow>
+
+    @if (isLoading)
+    {
+        <RadzenRow>
+            <RadzenColumn Size="12">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+            </RadzenColumn>
+        </RadzenRow>
+    }
+    else if (user != null)
+    {
+        <!-- Section User Info -->
+        <RadzenRow>
+            <RadzenColumn Size="12">
+                <RadzenCard>
+                    <RadzenText TextStyle="TextStyle.H5" TagName="TagName.H2">User Information</RadzenText>
+                    <RadzenStack Gap="0.5rem" class="rz-mt-4">
+                        <RadzenText><strong>Username:</strong> @user.UserName</RadzenText>
+                        <RadzenText><strong>Email:</strong> @user.Email</RadzenText>
+                    </RadzenStack>
+                </RadzenCard>
+            </RadzenColumn>
+        </RadzenRow>
+
+        <!-- Section Navigation -->
+        <RadzenRow>
+            <RadzenColumn Size="12">
+                <RadzenCard>
+                    <RadzenText TextStyle="TextStyle.H5" TagName="TagName.H2">User Management</RadzenText>
+                    <RadzenStack Orientation="Orientation.Horizontal" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mt-4">
+                        <RadzenButton Text="Manage Users" Icon="people" Click="@(() => NavigationManager.NavigateTo("/application-users"))" Variant="Variant.Flat" />
+                        <RadzenButton Text="Manage Roles" Icon="admin_panel_settings" Click="@(() => NavigationManager.NavigateTo("/application-roles"))" Variant="Variant.Flat" />
+                        <RadzenButton Text="Manage Tenants" Icon="business" Click="@(() => NavigationManager.NavigateTo("/application-tenants"))" Variant="Variant.Flat" />
+                    </RadzenStack>
+                </RadzenCard>
+            </RadzenColumn>
+        </RadzenRow>
+
+        <!-- Section Changement de mot de passe -->
+        <RadzenRow>
+            <RadzenColumn Size="12">
+                <RadzenCard>
+                    <RadzenText TextStyle="TextStyle.H5" TagName="TagName.H2" class="rz-mb-4">Change Password</RadzenText>
+                    <RadzenTemplateForm Method="post" Submit="@FormSubmit" TItem="ChangePasswordDto" Data="@changePasswordModel">
+                        <RadzenAlert Size="AlertSize.Large" Shade="Shade.Light" AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Title="Cannot change password" Visible="@errorVisible">@error</RadzenAlert>
+                        <RadzenAlert Size="AlertSize.Large" Shade="Shade.Light" AlertStyle="AlertStyle.Success" Variant="Variant.Flat" Visible="@successVisible">
+                            Your password has been changed successfully.
+                        </RadzenAlert>
+
+                        <RadzenStack style="margin-bottom: 1rem;">
+                            <RadzenFormField Text="Old Password" Variant="Variant.Flat">
+                                <ChildContent>
+                                    <RadzenPassword @bind-Value="@changePasswordModel.OldPassword" style="display: block; width: 100%" Name="OldPassword" />
+                                </ChildContent>
+                                <Helper>
+                                    <RadzenRequiredValidator Component="OldPassword" Text="Enter your current password" />
+                                </Helper>
+                            </RadzenFormField>
+                            <RadzenFormField Text="New Password" Variant="Variant.Flat">
+                                <ChildContent>
+                                    <RadzenPassword @bind-Value="@changePasswordModel.NewPassword" style="display: block; width: 100%" Name="NewPassword" />
+                                </ChildContent>
+                                <Helper>
+                                    <RadzenRequiredValidator Component="NewPassword" Text="Enter your new password" />
+                                </Helper>
+                            </RadzenFormField>
+                            <RadzenFormField Text="Confirm Password" Variant="Variant.Flat">
+                                <ChildContent>
+                                    <RadzenPassword @bind-Value="@changePasswordModel.ConfirmPassword" style="display: block; width: 100%" Name="ConfirmPassword" />
+                                </ChildContent>
+                                <Helper>
+                                    <RadzenRequiredValidator Component="ConfirmPassword" Text="Confirm your new password" />
+                                    <RadzenCompareValidator Component="ConfirmPassword" Text="Passwords should be the same" Value="@changePasswordModel.NewPassword" />
+                                </Helper>
+                            </RadzenFormField>
+                        </RadzenStack>
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.End">
+                            <RadzenButton ButtonType="ButtonType.Submit" Text="Change password" Variant="Variant.Flat" IsBusy="@isBusy" />
+                        </RadzenStack>
+                    </RadzenTemplateForm>
+                </RadzenCard>
+            </RadzenColumn>
+        </RadzenRow>
+    }
+    else
+    {
+        <RadzenRow>
+            <RadzenColumn Size="12">
+                <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat">
+                    Unable to load user profile. Please try logging in again.
+                </RadzenAlert>
+            </RadzenColumn>
+        </RadzenRow>
+    }
+</RadzenStack>
+
+@code {
+    private UserProfileDto? user;
+    private ChangePasswordDto changePasswordModel = new();
+    private bool errorVisible = false;
+    private bool successVisible = false;
+    private string error = string.Empty;
+    private bool isLoading = true;
+    private bool isBusy = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUserProfile();
+    }
+
+    private async Task LoadUserProfile()
+    {
+        try
+        {
+            isLoading = true;
+            user = await ProfileService.GetCurrentUserAsync();
+        
+            if (user == null)
+            {
+                error = "User profile returned null. Authentication may have failed.";
+                errorVisible = true;
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            error = $"Network error: {ex.Message}";
+            errorVisible = true;
+            // Log pour débogage
+            Console.WriteLine($"HTTP Error: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            error = $"Error loading profile: {ex.Message}";
+            errorVisible = true;
+            Console.WriteLine($"Error details: {ex}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task FormSubmit()
+    {
+        try
+        {
+            isBusy = true;
+            errorVisible = false;
+            successVisible = false;
+
+            if (user == null) return;
+
+            var response = await ProfileService.ChangePasswordAsync(changePasswordModel);
+
+            if (response.IsSuccessStatusCode)
+            {
+                successVisible = true;
+                changePasswordModel = new ChangePasswordDto();
+                
+                NotificationService.Notify(new NotificationMessage 
+                { 
+                    Severity = NotificationSeverity.Success, 
+                    Summary = "Success", 
+                    Detail = "Password changed successfully", 
+                    Duration = 4000 
+                });
+            }
+            else
+            {
+                var errors = await response.Content.ReadFromJsonAsync<List<IdentityErrorDto>>();
+                errorVisible = true;
+                error = errors != null ? string.Join(", ", errors.Select(e => e.Description)) : "An error occurred";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorVisible = true;
+            error = ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+}

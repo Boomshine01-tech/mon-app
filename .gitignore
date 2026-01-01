@@ -1,0 +1,19 @@
+## Ignorer les fichiers de build
+bin/
+obj/
+publish/
+
+## Ignorer les fichiers Visual Studio
+.vs/
+*.user
+*.suo
+
+## Ignorer SQLite
+*.db
+*.db-shm
+*.db-wal
+
+## Ignorer les secrets
+appsettings.Development.json
+appsettings.Docker.json
+appsettings.json
