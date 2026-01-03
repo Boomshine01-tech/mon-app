@@ -88,10 +88,8 @@ Console.WriteLine($"ContentRootPath: {builder.Environment.ContentRootPath}");
 
 // Récupérer la connection string
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-var postgresConnectionString = builder.Configuration.GetConnectionString("postgresConnection");
 
 Console.WriteLine($"🔗 DefaultConnection: {connectionString ?? "NULL"}");
-Console.WriteLine($"🔗 PostgresConnection: {postgresConnectionString ?? "NULL"}");
 
 // Afficher toutes les ConnectionStrings disponibles
 Console.WriteLine("\n📋 Toutes les ConnectionStrings:");
@@ -116,28 +114,79 @@ if (string.IsNullOrEmpty(connectionString))
     Console.WriteLine($"✅ Connection string récupérée: {connectionString}");
 }
 
-// =========================================
-// 📦 Contextes de base de données
-// =========================================
+// ========================================
+// CONFIGURATION DE LA BASE DE DONNÉES
+// ========================================
+Console.WriteLine("🔍 === DÉBUT CONFIGURATION DATABASE ===");
 
-
-// Configuration de la base de données
 var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+Console.WriteLine($"📋 DATABASE_URL présente: {!string.IsNullOrEmpty(databaseUrl)}");
 
 if (!string.IsNullOrEmpty(databaseUrl))
 {
-    // Production : Render
-    var connectiondbString = ConvertDatabaseUrl(databaseUrl);
-    builder.Services.AddDbContext<ApplicationDbContext>(options =>
-        options.UseNpgsql(connectiondbString));
+    Console.WriteLine($"🌐 DATABASE_URL (premiers 50 car): {databaseUrl.Substring(0, Math.Min(50, databaseUrl.Length))}...");
+    
+    try
+    {
+        // Production : Render
+        var connectiondbString = ConvertDatabaseUrl(databaseUrl);
+        Console.WriteLine($"✅ ConnectionString convertie: {connectiondbString.Substring(0, Math.Min(100, connectiondbString.Length))}...");
+        
+        // Afficher les détails de la connexion (sans le mot de passe)
+        var details = connectiondbString.Split(';');
+        foreach (var detail in details)
+        {
+            if (!detail.Contains("Password", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"   • {detail}");
+            }
+            else
+            {
+                Console.WriteLine($"   • Password=***");
+            }
+        }
+        
+        builder.Services.AddDbContext<ApplicationDbContext>(options =>
+        {
+            options.UseNpgsql(connectiondbString);
+            options.EnableDetailedErrors();
+            options.EnableSensitiveDataLogging(); // Seulement pour debug
+        });
+        
+        Console.WriteLine("✅ DbContext configuré avec PostgreSQL (Production)");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ ERREUR lors de la conversion DATABASE_URL: {ex.Message}");
+        Console.WriteLine($"📋 Stack trace: {ex.StackTrace}");
+        throw;
+    }
 }
 else
 {
+    Console.WriteLine("⚠️  DATABASE_URL non trouvée, utilisation configuration locale");
+    
     // Développement : local
     var connectiondbString = builder.Configuration.GetConnectionString("DefaultConnection");
+    Console.WriteLine($"📋 DefaultConnection: {connectiondbString ?? "NULL"}");
+    
+    if (string.IsNullOrEmpty(connectiondbString))
+    {
+        Console.WriteLine("❌ ERREUR: Aucune ConnectionString disponible!");
+        throw new InvalidOperationException("ConnectionString manquante");
+    }
+    
     builder.Services.AddDbContext<ApplicationDbContext>(options =>
-        options.UseNpgsql(connectiondbString));
+    {
+        options.UseNpgsql(connectiondbString);
+        options.EnableDetailedErrors();
+    });
+    
+    Console.WriteLine("✅ DbContext configuré avec PostgreSQL (Local)");
 }
+
+Console.WriteLine("🔍 === FIN CONFIGURATION DATABASE ===");
+Console.WriteLine("");
 
 builder.Services.AddControllers();
 
@@ -482,20 +531,67 @@ Console.WriteLine($"🔗 Listening on: {string.Join(", ", app.Urls)}");
 
 app.Run();
 
-// Fonction utilitaire pour convertir l'URL PostgreSQL
 static string ConvertDatabaseUrl(string databaseUrl)
 {
-    var uri = new Uri(databaseUrl);
-    var userInfo = uri.UserInfo.Split(':');
+    Console.WriteLine("🔄 === CONVERSION DATABASE_URL ===");
     
-    var connectionString = $"Host={uri.Host};" +
-                          $"Port={uri.Port};" +
-                          $"Database={uri.AbsolutePath.Trim('/')};" +
-                          $"Username={userInfo[0]};" +
-                          $"Password={userInfo[1]};" +
-                          $"SSL Mode=Require;" +
-                          $"Trust Server Certificate=true";
-    
-    Console.WriteLine($"📝 Connection string configured for host: {uri.Host}");
-    return connectionString;
+    try
+    {
+        Console.WriteLine($"📥 Input URL: {databaseUrl.Substring(0, Math.Min(50, databaseUrl.Length))}...");
+        
+        // Vérifier le format
+        if (!databaseUrl.StartsWith("postgres://") && !databaseUrl.StartsWith("postgresql://"))
+        {
+            Console.WriteLine($"⚠️  URL ne commence pas par postgres:// ou postgresql://");
+        }
+        
+        var databaseUri = new Uri(databaseUrl);
+        Console.WriteLine($"✅ URI parsée avec succès");
+        Console.WriteLine($"   • Host: {databaseUri.Host}");
+        Console.WriteLine($"   • Port: {databaseUri.Port}");
+        Console.WriteLine($"   • Database: {databaseUri.LocalPath.TrimStart('/')}");
+        
+        var userInfo = databaseUri.UserInfo.Split(':');
+        Console.WriteLine($"   • Username: {userInfo[0]}");
+        Console.WriteLine($"   • Password: {new string('*', userInfo.Length > 1 ? userInfo[1].Length : 0)}");
+        
+        if (userInfo.Length != 2)
+        {
+            Console.WriteLine($"⚠️  UserInfo format inattendu. Parties: {userInfo.Length}");
+        }
+        
+        var connectionString = new System.Text.StringBuilder();
+        connectionString.Append($"Host={databaseUri.Host};");
+        connectionString.Append($"Port={databaseUri.Port};");
+        connectionString.Append($"Database={databaseUri.LocalPath.TrimStart('/')};");
+        connectionString.Append($"Username={userInfo[0]};");
+        connectionString.Append($"Password={userInfo[1]};");
+        connectionString.Append("SSL Mode=Require;");
+        connectionString.Append("Trust Server Certificate=true");
+        
+        var result = connectionString.ToString();
+        Console.WriteLine($"✅ ConnectionString générée (longueur: {result.Length})");
+        Console.WriteLine("🔄 === FIN CONVERSION ===");
+        
+        return result;
+    }
+    catch (UriFormatException ex)
+    {
+        Console.WriteLine($"❌ ERREUR: Format d'URI invalide");
+        Console.WriteLine($"   Message: {ex.Message}");
+        throw new ArgumentException($"Format DATABASE_URL invalide: {ex.Message}", ex);
+    }
+    catch (IndexOutOfRangeException ex)
+    {
+        Console.WriteLine($"❌ ERREUR: UserInfo mal formaté (pas de ':' ou manquant)");
+        Console.WriteLine($"   Message: {ex.Message}");
+        throw new ArgumentException("DATABASE_URL: UserInfo invalide (format attendu: user:password)", ex);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ ERREUR inattendue: {ex.GetType().Name}");
+        Console.WriteLine($"   Message: {ex.Message}");
+        Console.WriteLine($"   Stack: {ex.StackTrace}");
+        throw;
+    }
 }
