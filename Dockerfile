@@ -22,5 +22,6 @@ COPY --from=build /app/server .
 COPY --from=build /app/client/wwwroot ./wwwroot
 
 
-EXPOSE $PORT
+ENV ASPNETCORE_ENVIRONMENT=Production
+
 ENTRYPOINT ["dotnet", "SmartNest.Server.dll"]
