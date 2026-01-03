@@ -5,28 +5,33 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.OData.ModelBuilder;
 using Radzen;
-using Microsoft.OData.Edm;
 using SmartNest.Server.Data;
 using SmartNest.Server.Services;
 using SmartNest.Server.Hubs;
-using SmartNest.Server.Models.postgres;
 using Microsoft.AspNetCore.Identity;
 using SmartNest.Server.Models;
 using Microsoft.AspNetCore.Components.Authorization;
 using Npgsql;
+using System.Text;
 
+try
+{
+    Console.WriteLine("========================================");
+    Console.WriteLine("🚀 DÉMARRAGE SMARTNEST");
+    Console.WriteLine("========================================");
 var builder = WebApplication.CreateBuilder(args);
 
 // ========================================
 // CONFIGURATION DU PORT - MÉTHODE SIMPLE
-// Laissons ASP.NET Core gérer le port automatiquement
 // ========================================
-Console.WriteLine("🔧 Démarrage de SmartNest...");
+Console.WriteLine("🔧 Configuration du port...");
 Console.WriteLine($"🌍 Environnement: {builder.Environment.EnvironmentName}");
 
 // Configuration automatique du port via Kestrel
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
+  try
+  {
     // Render définit la variable PORT
     var portString = Environment.GetEnvironmentVariable("PORT");
     
@@ -45,18 +50,31 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     // Limites pour optimisation mémoire
     serverOptions.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10 MB
     serverOptions.Limits.MaxConcurrentConnections = 50;
+  }
+  catch (Exception ex)
+  {
+       Console.WriteLine($"❌ ERREUR configuration Kestrel: {ex.Message}");
+       throw;
+  }
 });
 
 
 // =========================================
 // 🔧 Services de base
 // =========================================
+try
+{
 builder.Services.AddControllersWithViews();
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"❌ ERREUR ajout services de base: {ex.Message}");
+    throw;
+}
 // =========================================
 // 🧩 Services Radzen
 // =========================================
@@ -301,6 +319,8 @@ builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
 .AddDefaultTokenProviders();
 
 // CORS
+try
+{
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -311,7 +331,12 @@ builder.Services.AddCors(options =>
             .AllowCredentials();
     });
 });
-
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"❌ ERREUR configuration services additionnels: {ex.Message}");
+    throw;
+}
 // Optimisation mémoire pour 512 MB
 builder.Services.AddResponseCompression(options =>
 {
@@ -345,12 +370,17 @@ builder.Services.ConfigureApplicationCookie(options =>
 // =========================================
 // 🚀 Build Application
 // =========================================
+Console.WriteLine("");
+Console.WriteLine("🏗️  Construction de l'application...");
+    
 var app = builder.Build();
+Console.WriteLine("✅ Application construite");
 
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+    Console.WriteLine("✅ Swagger activé (dev)");
 }
 
 // =========================================
@@ -526,11 +556,11 @@ else
 
 
 //app.UseHttpsRedirection();
-app.UseResponseCompression();
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
-
+try
+{
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
+Console.WriteLine("✅ Fichiers statiques configurés");
 app.UseHeaderPropagation();
 app.UseRequestLocalization(options => 
     options.AddSupportedCultures("en", "fr")
@@ -539,17 +569,68 @@ app.UseRequestLocalization(options =>
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+Console.WriteLine("✅ Routing et Authorization configurés");
 app.UseCors("AllowAll");
+app.UseResponseCompression();
+Console.WriteLine("✅ CORS et Compression activés");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"❌ ERREUR configuration middleware: {ex.Message}");
+    throw;
+}
+
+try
+{
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
+Console.WriteLine("✅ Health check configuré");
 app.MapRazorPages();
 app.MapControllers();
+Console.WriteLine("✅ Controllers mappés");
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
+Console.WriteLine("✅ Fallback configuré");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"❌ ERREUR configuration endpoints: {ex.Message}");
+    throw;
+}
 
 Console.WriteLine("🚀 SmartNest application starting...");
 Console.WriteLine($"🌍 Environment: {app.Environment.EnvironmentName}");
 Console.WriteLine($"🔗 Listening on: {string.Join(", ", app.Urls)}");
 
 app.Run();
+}
+catch (Exception ex)
+{
+    Console.WriteLine("");
+    Console.WriteLine("╔════════════════════════════════════════╗");
+    Console.WriteLine("║  ❌ ERREUR FATALE AU DÉMARRAGE        ║");
+    Console.WriteLine("╚════════════════════════════════════════╝");
+    Console.WriteLine($"Type: {ex.GetType().FullName}");
+    Console.WriteLine($"Message: {ex.Message}");
+    Console.WriteLine("");
+    Console.WriteLine("Stack Trace:");
+    Console.WriteLine(ex.StackTrace);
+    Console.WriteLine("");
+    
+    if (ex.InnerException != null)
+    {
+        Console.WriteLine("Inner Exception:");
+        Console.WriteLine($"Type: {ex.InnerException.GetType().FullName}");
+        Console.WriteLine($"Message: {ex.InnerException.Message}");
+        Console.WriteLine("");
+        Console.WriteLine("Inner Stack Trace:");
+        Console.WriteLine(ex.InnerException.StackTrace);
+    }
+    
+    Console.WriteLine("========================================");
+    
+    // Quitter avec code d'erreur
+    Environment.Exit(1);
+}
 
 static string ConvertDatabaseUrl(string databaseUrl)
 {
@@ -564,6 +645,7 @@ static string ConvertDatabaseUrl(string databaseUrl)
         Console.WriteLine($"   • Host: {databaseUri.Host}");
         Console.WriteLine($"   • Port détecté: {databaseUri.Port}");
         
+        // ⚠️ CORRECTION : Si le port est -1, utiliser le port par défaut PostgreSQL
         var port = databaseUri.Port == -1 ? 5432 : databaseUri.Port;
         Console.WriteLine($"   • Port utilisé: {port}");
         Console.WriteLine($"   • Database: {databaseUri.LocalPath.TrimStart('/')}");
