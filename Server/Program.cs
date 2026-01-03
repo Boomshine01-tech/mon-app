@@ -318,26 +318,6 @@ builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
 .AddSignInManager<SignInManager<ApplicationUser>>()
 .AddDefaultTokenProviders();
 
-// CORS
-try
-{
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", policy =>
-    {
-        policy.AllowAnyOrigin()
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials();
-    });
-});
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"❌ ERREUR configuration services additionnels: {ex.Message}");
-    throw;
-}
-// Optimisation mémoire pour 512 MB
 builder.Services.AddResponseCompression(options =>
 {
     options.EnableForHttps = true;
@@ -570,9 +550,8 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 Console.WriteLine("✅ Routing et Authorization configurés");
-app.UseCors("AllowAll");
 app.UseResponseCompression();
-Console.WriteLine("✅ CORS et Compression activés");
+Console.WriteLine("✅ Compression activés");
 }
 catch (Exception ex)
 {
