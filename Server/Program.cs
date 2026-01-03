@@ -364,8 +364,8 @@ try
     {
         Console.WriteLine("⏳ Connexion à PostgreSQL...");
     
-        using var scope = app.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        using var scope1 = app.Services.CreateScope();
+        var db = scope1.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     
         Console.WriteLine("🔌 Test de connexion...");
         var canConnect = await db.Database.CanConnectAsync();
@@ -524,23 +524,6 @@ else
     app.UseHsts();
 }
 
-// ========================================
-// HEALTH CHECK
-// ========================================
-app.MapGet("/health", () => 
-{
-    var uptimeSeconds = Environment.TickCount64 / 1000;
-    var memoryMB = GC.GetTotalMemory(false) / 1024 / 1024;
-    
-    return Results.Ok(new 
-    { 
-        status = "healthy", 
-        timestamp = DateTime.UtcNow,
-        uptime = $"{uptimeSeconds}s",
-        memoryUsed = $"{memoryMB}MB",
-        environment = app.Environment.EnvironmentName
-    });
-});
 
 //app.UseHttpsRedirection();
 app.UseResponseCompression();
@@ -581,7 +564,6 @@ static string ConvertDatabaseUrl(string databaseUrl)
         Console.WriteLine($"   • Host: {databaseUri.Host}");
         Console.WriteLine($"   • Port détecté: {databaseUri.Port}");
         
-        // ⚠️ CORRECTION : Si le port est -1, utiliser le port par défaut PostgreSQL
         var port = databaseUri.Port == -1 ? 5432 : databaseUri.Port;
         Console.WriteLine($"   • Port utilisé: {port}");
         Console.WriteLine($"   • Database: {databaseUri.LocalPath.TrimStart('/')}");
