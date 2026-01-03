@@ -17,17 +17,34 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var port = "8080";
+// ========================================
+// CONFIGURATION DU PORT - MÉTHODE SIMPLE
+// Laissons ASP.NET Core gérer le port automatiquement
+// ========================================
+Console.WriteLine("🔧 Démarrage de SmartNest...");
+Console.WriteLine($"🌍 Environnement: {builder.Environment.EnvironmentName}");
 
-// Lire depuis la variable d'environnement Render
-if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("PORT")))
-{
-    port = Environment.GetEnvironmentVariable("PORT")!;
-}
-
+// Configuration automatique du port via Kestrel
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
-    serverOptions.ListenAnyIP(int.Parse(port));
+    // Render définit la variable PORT
+    var portString = Environment.GetEnvironmentVariable("PORT");
+    
+    if (!string.IsNullOrEmpty(portString) && int.TryParse(portString, out int port))
+    {
+        Console.WriteLine($"📡 Port détecté depuis variable d'environnement: {port}");
+        serverOptions.ListenAnyIP(port);
+    }
+    else
+    {
+        // Fallback pour développement local
+        Console.WriteLine("📡 Utilisation du port par défaut: 5000");
+        serverOptions.ListenAnyIP(5000);
+    }
+    
+    // Limites pour optimisation mémoire
+    serverOptions.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10 MB
+    serverOptions.Limits.MaxConcurrentConnections = 50;
 });
 
 
@@ -237,13 +254,9 @@ builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options =>
 // CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowBlazor", policy =>
+    options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins(
-                "https://blazor-app.onrender.com",  // Votre Static Site Render
-                "https://Smart-Nest.com",         // Votre domaine personnalisé
-                "http://localhost:5001"              // Pour le développement local
-            )
+        policy.AllowAnyOrigin()
             .AllowAnyMethod()
             .AllowAnyHeader()
             .AllowCredentials();
@@ -254,12 +267,6 @@ builder.Services.AddCors(options =>
 builder.Services.AddResponseCompression(options =>
 {
     options.EnableForHttps = true;
-});
-
-builder.WebHost.ConfigureKestrel(options =>
-{
-    options.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10 MB max
-    options.Limits.MaxConcurrentConnections = 50;
 });
 
 // Cookie Configuration
@@ -430,6 +437,24 @@ else
     app.UseExceptionHandler("/Error");
     app.UseHsts();
 }
+
+// ========================================
+// HEALTH CHECK
+// ========================================
+app.MapGet("/health", () => 
+{
+    var uptimeSeconds = Environment.TickCount64 / 1000;
+    var memoryMB = GC.GetTotalMemory(false) / 1024 / 1024;
+    
+    return Results.Ok(new 
+    { 
+        status = "healthy", 
+        timestamp = DateTime.UtcNow,
+        uptime = $"{uptimeSeconds}s",
+        memoryUsed = $"{memoryMB}MB",
+        environment = app.Environment.EnvironmentName
+    });
+});
 
 //app.UseHttpsRedirection();
 app.UseResponseCompression();
