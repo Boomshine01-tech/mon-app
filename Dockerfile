@@ -16,7 +16,7 @@ RUN dotnet publish "SmartNest.Server.csproj" -c Release -o /app/server
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app
 
-RUN mkdir -p /app/data && chmod 777 /app/data
+RUN mkdir -p /app/data 
 
 COPY --from=build /app/server .
 COPY --from=build /app/client/wwwroot ./wwwroot
