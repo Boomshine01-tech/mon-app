@@ -13,12 +13,14 @@ using SmartNest.Server.Models.postgres;
 using Microsoft.AspNetCore.Identity;
 using SmartNest.Server.Models;
 using Microsoft.AspNetCore.Components.Authorization;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Configurer le port dynamique de Render
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5001";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
 
 // =========================================
 // 🔧 Services de base
@@ -93,9 +95,25 @@ if (string.IsNullOrEmpty(connectionString))
 // =========================================
 
 
-// ApplicationDbContext
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+// Configuration de la base de données
+var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+
+if (!string.IsNullOrEmpty(databaseUrl))
+{
+    // Production : Render
+    var connectiondbString = ConvertDatabaseUrl(databaseUrl);
+    builder.Services.AddDbContext<ApplicationDbContext>(options =>
+        options.UseNpgsql(connectiondbString));
+}
+else
+{
+    // Développement : local
+    var connectiondbString = builder.Configuration.GetConnectionString("DefaultConnection");
+    builder.Services.AddDbContext<ApplicationDbContext>(options =>
+        options.UseNpgsql(connectiondbString));
+}
+
+builder.Services.AddControllers();
 
 // =========================================
 // 🧠 Services métier
@@ -282,7 +300,7 @@ try
     using (var scope1 = app.Services.CreateScope())
     {
         var db = scope1.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        db.Database.EnsureCreated(); // Crée la DB si elle n'existe 
+        await db.Database.MigrateAsync();// Crée la DB si elle n'existe 
          Console.WriteLine("PostgreSQL  ready");
     }
     
@@ -418,7 +436,7 @@ app.UseRequestLocalization(options =>
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseCors("AllowBlazorClient");
+app.UseCors("AllowAll");
 app.MapRazorPages();
 app.MapControllers();
 app.MapBlazorHub();
@@ -429,3 +447,21 @@ Console.WriteLine($"🌍 Environment: {app.Environment.EnvironmentName}");
 Console.WriteLine($"🔗 Listening on: {string.Join(", ", app.Urls)}");
 
 app.Run();
+
+// Fonction utilitaire pour convertir l'URL PostgreSQL
+static string ConvertDatabaseUrl(string databaseUrl)
+{
+    var uri = new Uri(databaseUrl);
+    var userInfo = uri.UserInfo.Split(':');
+    
+    var connectionString = $"Host={uri.Host};" +
+                          $"Port={uri.Port};" +
+                          $"Database={uri.AbsolutePath.Trim('/')};" +
+                          $"Username={userInfo[0]};" +
+                          $"Password={userInfo[1]};" +
+                          $"SSL Mode=Require;" +
+                          $"Trust Server Certificate=true";
+    
+    Console.WriteLine($"📝 Connection string configured for host: {uri.Host}");
+    return connectionString;
+}

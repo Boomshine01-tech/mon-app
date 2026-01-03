@@ -1,9 +1,9 @@
 services:
   # API ASP.NET Core
   - type: web
-    name: smartnest-api
+    name: smartnest
     env: docker
-    dockerfilePath: ./Server/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: ./
     plan: free
     region: frankfurt
