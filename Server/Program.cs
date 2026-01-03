@@ -360,13 +360,50 @@ Console.WriteLine("\n========== 🗄️ DATABASE INITIALIZATION ==========");
 
 try
 {
-    // Attendre que PostgreSQL soit prêt (important pour Docker)
-    Console.WriteLine("⏳ Waiting for PostgreSQL to be ready...");
-    using (var scope1 = app.Services.CreateScope())
+    try
     {
-        var db = scope1.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await db.Database.MigrateAsync();// Crée la DB si elle n'existe 
-         Console.WriteLine("PostgreSQL  ready");
+        Console.WriteLine("⏳ Connexion à PostgreSQL...");
+    
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    
+        Console.WriteLine("🔌 Test de connexion...");
+        var canConnect = await db.Database.CanConnectAsync();
+        Console.WriteLine($"   Connexion: {(canConnect ? "✅ OK" : "❌ ÉCHEC")}");
+    
+        if (canConnect)
+        {
+            Console.WriteLine("📊 Application des migrations...");
+            await db.Database.MigrateAsync();
+        
+            Console.WriteLine("📋 Tables dans la base:");
+            var tables = db.Model.GetEntityTypes().Select(t => t.GetTableName()).ToList();
+            foreach (var table in tables)
+            {
+                Console.WriteLine($"   • {table}");
+            }
+        
+            Console.WriteLine("✅ Base de données PostgreSQL prête");
+        }
+        else
+        {
+            Console.WriteLine("❌ Impossible de se connecter à PostgreSQL");
+        }
+    }
+    catch (Npgsql.NpgsqlException ex)
+    {
+        Console.WriteLine($"❌ ERREUR PostgreSQL: {ex.Message}");
+        Console.WriteLine($"   Code: {ex.ErrorCode} | SqlState: {ex.SqlState}");
+        if (ex.InnerException != null)
+        {
+            Console.WriteLine($"   Inner: {ex.InnerException.Message}");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ ERREUR: {ex.GetType().Name}");
+        Console.WriteLine($"   Message: {ex.Message}");
+        Console.WriteLine($"   Stack: {ex.StackTrace?.Substring(0, Math.Min(500, ex.StackTrace?.Length ?? 0))}");
     }
     
     // =========================================
@@ -539,16 +576,14 @@ static string ConvertDatabaseUrl(string databaseUrl)
     {
         Console.WriteLine($"📥 Input URL: {databaseUrl.Substring(0, Math.Min(50, databaseUrl.Length))}...");
         
-        // Vérifier le format
-        if (!databaseUrl.StartsWith("postgres://") && !databaseUrl.StartsWith("postgresql://"))
-        {
-            Console.WriteLine($"⚠️  URL ne commence pas par postgres:// ou postgresql://");
-        }
-        
         var databaseUri = new Uri(databaseUrl);
         Console.WriteLine($"✅ URI parsée avec succès");
         Console.WriteLine($"   • Host: {databaseUri.Host}");
-        Console.WriteLine($"   • Port: {databaseUri.Port}");
+        Console.WriteLine($"   • Port détecté: {databaseUri.Port}");
+        
+        // ⚠️ CORRECTION : Si le port est -1, utiliser le port par défaut PostgreSQL
+        var port = databaseUri.Port == -1 ? 5432 : databaseUri.Port;
+        Console.WriteLine($"   • Port utilisé: {port}");
         Console.WriteLine($"   • Database: {databaseUri.LocalPath.TrimStart('/')}");
         
         var userInfo = databaseUri.UserInfo.Split(':');
@@ -557,12 +592,12 @@ static string ConvertDatabaseUrl(string databaseUrl)
         
         if (userInfo.Length != 2)
         {
-            Console.WriteLine($"⚠️  UserInfo format inattendu. Parties: {userInfo.Length}");
+            throw new ArgumentException($"UserInfo invalide. Parties trouvées: {userInfo.Length}");
         }
         
         var connectionString = new System.Text.StringBuilder();
         connectionString.Append($"Host={databaseUri.Host};");
-        connectionString.Append($"Port={databaseUri.Port};");
+        connectionString.Append($"Port={port};"); // ✅ Utiliser le port corrigé
         connectionString.Append($"Database={databaseUri.LocalPath.TrimStart('/')};");
         connectionString.Append($"Username={userInfo[0]};");
         connectionString.Append($"Password={userInfo[1]};");
@@ -583,7 +618,7 @@ static string ConvertDatabaseUrl(string databaseUrl)
     }
     catch (IndexOutOfRangeException ex)
     {
-        Console.WriteLine($"❌ ERREUR: UserInfo mal formaté (pas de ':' ou manquant)");
+        Console.WriteLine($"❌ ERREUR: UserInfo mal formaté");
         Console.WriteLine($"   Message: {ex.Message}");
         throw new ArgumentException("DATABASE_URL: UserInfo invalide (format attendu: user:password)", ex);
     }
@@ -591,7 +626,6 @@ static string ConvertDatabaseUrl(string databaseUrl)
     {
         Console.WriteLine($"❌ ERREUR inattendue: {ex.GetType().Name}");
         Console.WriteLine($"   Message: {ex.Message}");
-        Console.WriteLine($"   Stack: {ex.StackTrace}");
         throw;
     }
 }
