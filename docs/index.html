@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SmartNest</title>
+    <base href="/" />
+    <link href="css/bootstrap/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/app.css" rel="stylesheet" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link href="SmartNest.Client.styles.css" rel="stylesheet" />
+</head>
+
+<body>
+    <div id="app">
+        <svg class="loading-progress">
+            <circle r="40%" cx="50%" cy="50%" />
+            <circle r="40%" cx="50%" cy="50%" />
+        </svg>
+        <div class="loading-progress-text"></div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+
+    <!-- Blazor WebAssembly -->
+    <script src="_framework/blazor.webassembly.js"></script>
+    
+    <script>
+    window.videoCapture = {
+        mediaStream: null,
+        captureInterval: null,
+        dotNetHelper: null,
+        videoElement: null,
+
+        startCapture: async function(helper, fps, quality, resolution) {
+            console.log('🚀 Starting...');
+            this.dotNetHelper = helper;
+            
+            try {
+                const config = {
+                    low: { width: 320, height: 240 },
+                    medium: { width: 640, height: 480 },
+                    high: { width: 1280, height: 720 }
+                }[resolution] || { width: 640, height: 480 };
+                
+                this.mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: config.width },
+                        height: { ideal: config.height },
+                        frameRate: { ideal: fps }
+                    } 
+                });
+                
+                this.videoElement = document.createElement('video');
+                this.videoElement.srcObject = this.mediaStream;
+                this.videoElement.playsInline = true;
+                this.videoElement.muted = true;
+                
+                await new Promise((resolve) => {
+                    this.videoElement.onloadedmetadata = () => {
+                        this.videoElement.play();
+                        resolve();
+                    };
+                });
+
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = config.width;
+                canvas.height = config.height;
+
+                this.captureInterval = setInterval(async () => {
+                    if (this.videoElement.readyState === 4) {
+                        ctx.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
+                        const frameData = canvas.toDataURL('image/jpeg', quality);
+                        const base64 = frameData.split(',')[1];
+                        
+                        try {
+                            await this.dotNetHelper.invokeMethodAsync('ReceiveVideoFrame', base64);
+                        } catch (e) {
+                            console.error('Frame error:', e);
+                        }
+                    }
+                }, 1000 / fps);
+
+                console.log('✅ Started');
+                return true;
+                
+            } catch (error) {
+                console.error('❌', error);
+                alert('Erreur: ' + error.message);
+                return false;
+            }
+        },
+
+        stopCapture: function() {
+            if (this.captureInterval) clearInterval(this.captureInterval);
+            if (this.mediaStream) this.mediaStream.getTracks().forEach(t => t.stop());
+            if (this.videoElement) this.videoElement.srcObject = null;
+            this.captureInterval = null;
+            this.mediaStream = null;
+            this.videoElement = null;
+            this.dotNetHelper = null;
+            console.log('✅ Stopped');
+        }
+    };
+    console.log('✅ videoCapture ready');
+    </script>
+</body>
+</html>

@@ -1,0 +1,150 @@
+.devices-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem;
+    font-family: 'Poppins', sans-serif;
+}
+
+.page-title {
+    text-align: center;
+    font-size: 2.2rem;
+    margin-bottom: 2rem;
+    color: #2c3e50;
+}
+
+.device-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 2rem;
+}
+
+.device-block {
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 250px;
+    transition: transform 0.3s ease;
+}
+
+.device-block:hover {
+    transform: scale(1.02);
+}
+
+.device-block.active {
+    border-left: 6px solid #00c896;
+}
+
+.device-block.inactive {
+    border-left: 6px solid #ff6b6b;
+}
+
+.device-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.device-header h2 {
+    font-size: 1.3rem;
+    color: #2c3e50;
+    margin: 0;
+}
+
+.device-illustration {
+    font-size: 2rem;
+}
+
+.device-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+}
+
+.status-label {
+    font-weight: 600;
+    color: #34495e;
+}
+
+.status-led {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    box-shadow: 0 0 6px rgba(0, 0, 0, 0.2);
+}
+
+.led-green {
+    background-color: #00c896;
+}
+
+.led-red {
+    background-color: #ff6b6b;
+}
+
+.device-footer {
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    color: #7f8c8d;
+    display: flex;
+    flex-direction: column;
+}
+
+.footer-label {
+    font-weight: 500;
+}
+
+.footer-value {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.loading-container {
+    text-align: center;
+    padding: 4rem;
+}
+
+.loading-spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #00c896;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 2s linear infinite;
+    margin: 0 auto 1rem;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+}
+
+.btn-retry {
+    background: #00c896;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.btn-retry:hover {
+    background: #00b386;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .device-grid {
+        grid-template-columns: 1fr;
+    }
+}
