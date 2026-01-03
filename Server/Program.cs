@@ -17,9 +17,18 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configurer le port dynamique de Render
-var port = Environment.GetEnvironmentVariable("PORT") ?? "5001";
-builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+var port = "8080";
+
+// Lire depuis la variable d'environnement Render
+if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("PORT")))
+{
+    port = Environment.GetEnvironmentVariable("PORT")!;
+}
+
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.ListenAnyIP(int.Parse(port));
+});
 
 
 // =========================================
