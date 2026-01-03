@@ -21,11 +21,11 @@ RUN mkdir -p /app/data && chmod 777 /app/data
 COPY --from=build /app/server .
 COPY --from=build /app/client/wwwroot ./wwwroot
 
-ENV PORT=8080
+# Variables d'environnement
 ENV DOTNET_GCHeapHardLimit=400000000
 ENV DOTNET_GCConserveMemory=9
-ENV ASPNETCORE_URLS=http://0.0.0.0:${PORT}
+ENV ASPNETCORE_URLS=http://0.0.0.0:$PORT
 ENV ASPNETCORE_ENVIRONMENT=Production
 
-EXPOSE ${PORT}
+EXPOSE $PORT
 ENTRYPOINT ["dotnet", "SmartNest.Server.dll"]
