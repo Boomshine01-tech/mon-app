@@ -264,38 +264,68 @@ namespace SmartNest.Server.Controllers
         // POST /api/account/currentuser
         // Retourne l'état d'authentification actuel
         // ========================================
-        [HttpPost("currentuser")]
-        public IActionResult CurrentUser()
+        // ========================================
+// POST /api/account/currentuser
+// ========================================
+[HttpPost("currentuser")]
+public async Task<IActionResult> GetCurrentUser()
+{
+    try
+    {
+        Console.WriteLine("🔍 GetCurrentUser appelé");
+        
+        // Vérifier si l'utilisateur est authentifié
+        if (!User.Identity?.IsAuthenticated ?? true)
         {
-            try
-            {
-                Console.WriteLine("👤 CurrentUser called");
-                Console.WriteLine($"   Authenticated: {User.Identity?.IsAuthenticated}");
-                Console.WriteLine($"   Name: {User.Identity?.Name}");
-                
-                var isAuthenticated = User.Identity?.IsAuthenticated ?? false;
-                var name = User.Identity?.Name ?? string.Empty;
-                
-                var claims = User.Claims.Select(c => new 
-                { 
-                    type = c.Type, 
-                    value = c.Value 
-                }).ToList();
-                
-                return Ok(new 
-                {
-                    isAuthenticated = isAuthenticated,
-                    name = name,
-                    claims = claims
-                });
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ CurrentUser error: {ex.Message}");
-                _logger.LogError(ex, "CurrentUser error");
-                return StatusCode(500, new { error = "Failed to get current user" });
-            }
+            Console.WriteLine("❌ User not authenticated");
+            return Unauthorized(new { error = "Not authenticated" });
         }
+
+        // Récupérer l'ID utilisateur depuis les claims
+        var userId = User.FindFirst("sub")?.Value 
+                  ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                  ?? User.FindFirst("id")?.Value;
+
+        if (string.IsNullOrEmpty(userId))
+        {
+            Console.WriteLine("❌ User ID not found in claims");
+            return BadRequest(new { error = "User ID not found" });
+        }
+
+        Console.WriteLine($"   User ID: {userId}");
+
+        // Récupérer l'utilisateur complet
+        var user = await _userManager.FindByIdAsync(userId);
+
+        if (user == null)
+        {
+            Console.WriteLine("❌ User not found in database");
+            return NotFound(new { error = "User not found" });
+        }
+
+        Console.WriteLine($"✅ User found: {user.UserName}");
+
+        // Récupérer les rôles
+        var roles = await _userManager.GetRolesAsync(user);
+
+        // Retourner les informations utilisateur
+        return Ok(new 
+        {
+            id = user.Id,
+            userName = user.UserName,
+            email = user.Email,
+            emailConfirmed = user.EmailConfirmed,
+            phoneNumber = user.PhoneNumber,
+            roles = roles
+        });
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ GetCurrentUser error: {ex.Message}");
+        _logger.LogError(ex, "GetCurrentUser error");
+        return StatusCode(500, new { error = "Failed to get current user" });
+    }
+}
 
         // ========================================
         // POST /api/account/changepassword
