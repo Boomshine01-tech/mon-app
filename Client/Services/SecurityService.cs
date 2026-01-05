@@ -79,43 +79,57 @@ namespace SmartNest.Client
             return Principal?.Identity?.IsAuthenticated == true;
         }
 
-        public async Task<bool> InitializeAsync(AuthenticationState result)
+        public async Task InitializeAsync(AuthenticationState result)
+{
+    try
+    {
+        Console.WriteLine("🔄 InitializeAsync appelé");
+        
+        var user = result.User;
+        Console.WriteLine($"   User authenticated: {user?.Identity?.IsAuthenticated}");
+        
+        if (user?.Identity?.IsAuthenticated == true)
         {
-            Principal = result.User;
-#if DEBUG
-            if (Principal.Identity?.Name == "admin")
+            var userId = user.FindFirst("sub")?.Value 
+                      ?? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                      ?? user.FindFirst("id")?.Value;
+            
+            Console.WriteLine($"   User ID trouvé: {userId ?? "NULL"}");
+            
+            if (!string.IsNullOrEmpty(userId))
             {
-                User = new ApplicationUser { Name = "Admin" };
-
-                return true;
-            }
-#endif
-            var userId = Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
-
-            if (userId != null && User?.Id != userId)
-            {
-                User = await GetUserById(userId);
-
-                if (User != null && Tenant == null)
+                var appUser = await GetUserById(userId);
+                
+                if (appUser != null)
                 {
-                    if (IsDevelopment() && User.Name == "admin" || User.Name == "tenantsadmin")
-                    {
-                        var tenants = await GetTenants();
-                        if (tenants.Any())
-                        {
-                            Tenant = tenants.FirstOrDefault()!;
-                        }
-                    }
-                    else if (User.TenantId != null)
-                    {
-                        User.ApplicationTenant = await GetTenantById(User.TenantId);
-                        Tenant = User.ApplicationTenant;
-                    }
+                    Console.WriteLine($"✅ Utilisateur chargé: {appUser.UserName}");
+                    // Stocker l'utilisateur si nécessaire
+                }
+                else
+                {
+                    Console.WriteLine("⚠️  GetUserById a retourné null");
                 }
             }
-
-            return IsAuthenticated();
+            else
+            {
+                Console.WriteLine("⚠️  Impossible de trouver l'ID utilisateur dans les claims");
+            }
         }
+        else
+        {
+            Console.WriteLine("ℹ️  Utilisateur non authentifié");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ ERREUR InitializeAsync: {ex.Message}");
+        Console.WriteLine($"   Type: {ex.GetType().Name}");
+        Console.WriteLine($"   Stack: {ex.StackTrace}");
+        
+        // ⚠️ IMPORTANT : Ne pas relancer l'exception
+        // Laissez l'app continuer même si l'init échoue
+    }
+}
 
 
         public ApplicationTenant Tenant { get; set; }
@@ -212,19 +226,50 @@ namespace SmartNest.Client
             return await httpClient.DeleteAsync(uri);
         }
 
-        public async Task<ApplicationUser> GetUserById(string id)
+        public async Task<ApplicationUser?> GetUserById(string id)
+{
+    try
+    {
+        Console.WriteLine($"🔍 GetUserById appelé avec ID: {id}");
+        
+        var url = $"/api/account/user/{id}";
+        Console.WriteLine($"🌐 URL: {url}");
+        
+        var response = await httpClient.GetAsync(url);
+        Console.WriteLine($"📊 Status: {response.StatusCode}");
+        
+        if (!response.IsSuccessStatusCode)
         {
-            var uri = new Uri(baseUri, $"ApplicationUsers('{id}')?$expand=Roles");
-
-            var response = await httpClient.GetAsync(uri);
-
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                return null;
-            }
-
-            return await response.ReadAsync<ApplicationUser>();
+            var errorContent = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"❌ Erreur API: {errorContent}");
+            return null; // ⚠️ Retourner null au lieu de crasher
         }
+        
+        var content = await response.Content.ReadAsStringAsync();
+        Console.WriteLine($"✅ Réponse reçue (longueur: {content.Length})");
+        
+        var user = await response.Content.ReadFromJsonAsync<ApplicationUser>();
+        Console.WriteLine($"✅ User parsé: {user?.UserName ?? "NULL"}");
+        
+        return user;
+    }
+    catch (HttpRequestException ex)
+    {
+        Console.WriteLine($"❌ Erreur HTTP: {ex.Message}");
+        return null; // ⚠️ Ne pas crasher l'app
+    }
+    catch (System.Text.Json.JsonException ex)
+    {
+        Console.WriteLine($"❌ Erreur parsing JSON: {ex.Message}");
+        return null; // ⚠️ Ne pas crasher l'app
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ Erreur inattendue: {ex.Message}");
+        Console.WriteLine($"   Stack: {ex.StackTrace}");
+        return null; // ⚠️ Ne pas crasher l'app
+    }
+}
 
         public async Task<ApplicationUser> UpdateUser(string id, ApplicationUser user)
         {
