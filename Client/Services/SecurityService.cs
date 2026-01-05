@@ -2,7 +2,7 @@ using System;
 using System.Web;
 using System.Linq;
 using System.Collections.Generic;
-using System.Net.Http;
+using System.Net.Http.Json;
 using System.Threading.Tasks;
 using System.Text;
 using System.Text.Json;
@@ -10,7 +10,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
-
+using System.Text.Json.Serialization;
 using Radzen;
 
 using SmartNest.Server.Models;
